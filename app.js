@@ -25,28 +25,52 @@ const HL_COLORS = { yellow: '#ffd84d', green: '#7ddc8a', blue: '#7cb8ff', pink: 
 
 /* ---------- IndexedDB ---------- */
 const DB = {
-  db: null,
+  db: null, _p: null,
   open() {
-    return new Promise((res, rej) => {
-      const r = indexedDB.open('myebooks', 1);
+    if (this.db) return Promise.resolve();
+    if (this._p) return this._p;
+    this._p = new Promise((res, rej) => {
+      let r;
+      try { r = indexedDB.open('myebooks', 1); } catch (e) { rej(e); return; }
+      const timer = setTimeout(() => rej(new Error('저장소 응답이 없어요 (시간 초과)')), 8000);
       r.onupgradeneeded = () => {
         const d = r.result;
-        d.createObjectStore('meta', { keyPath: 'id' });
-        d.createObjectStore('files', { keyPath: 'id' });
-        d.createObjectStore('state', { keyPath: 'id' });
+        for (const n of ['meta', 'files', 'state']) if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, { keyPath: 'id' });
       };
-      r.onsuccess = () => { this.db = r.result; res(); };
-      r.onerror = () => rej(r.error);
-    });
+      r.onsuccess = () => {
+        clearTimeout(timer);
+        this.db = r.result;
+        this.db.onclose = this.db.onversionchange = () => { try { this.db.close(); } catch (e) {} this.db = null; this._p = null; };
+        res();
+      };
+      r.onerror = () => { clearTimeout(timer); rej(r.error || new Error('저장소를 열 수 없어요')); };
+      r.onblocked = () => { clearTimeout(timer); rej(new Error('다른 탭이 저장소를 잡고 있어요')); };
+    }).catch(e => { this._p = null; throw e; });
+    return this._p;
   },
-  tx(store, mode, fn) {
+  _tx(store, mode, fn) {
     return new Promise((res, rej) => {
-      const t = this.db.transaction(store, mode);
+      let t;
+      try { t = this.db.transaction(store, mode); } catch (e) { rej(e); return; }
       const out = fn(t.objectStore(store));
       t.oncomplete = () => res(out && 'result' in out ? out.result : undefined);
       t.onerror = () => rej(t.error);
       t.onabort = () => rej(t.error);
     });
+  },
+  async tx(store, mode, fn) {
+    await this.open();
+    try { return await this._tx(store, mode, fn); }
+    catch (e) {
+      // 아이패드에서 저장소 연결이 끊긴 경우: 한 번 다시 연결해서 재시도
+      if (e && (e.name === 'InvalidStateError' || /clos|lost|null/i.test(String(e.message)))) {
+        try { this.db && this.db.close(); } catch (_) {}
+        this.db = null; this._p = null;
+        await this.open();
+        return this._tx(store, mode, fn);
+      }
+      throw e;
+    }
   },
   get: (s, id) => DB.tx(s, 'readonly', st => st.get(id)),
   all: s => DB.tx(s, 'readonly', st => st.getAll()),
@@ -846,12 +870,25 @@ addEventListener('pagehide', () => { if (cur) saveState.flush(); });
 addEventListener('beforeunload', () => { if (cur) saveState.flush(); });
 
 /* 시작 */
-(async function init() {
+async function startApp() {
   applyChromeTheme();
-  try { await DB.open(); } catch (e) { toast('이 브라우저에서는 저장소를 사용할 수 없어요 (사생활 보호 모드?)', 6000); return; }
+  let lastErr = null;
+  for (let i = 0; i < 3; i++) {
+    try { await DB.open(); lastErr = null; break; }
+    catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 500 * (i + 1))); }
+  }
+  if (lastErr) {
+    const box = $('#empty'); box.hidden = false;
+    box.innerHTML = '<div class="empty-icon">⚠️</div><p>저장소를 열지 못했어요.<br><span class="muted small">(' + esc(lastErr.name || '') + ' ' + esc(lastErr.message || lastErr) + ')</span></p>' +
+      '<p class="muted small">Safari(또는 홈 화면 앱)를 완전히 종료했다가 다시 열어보세요.<br>사생활 보호 모드에서는 쓸 수 없어요.</p><p><button id="retryDb" class="btn primary">다시 시도</button></p>';
+    $('#retryDb').onclick = () => { box.innerHTML = ''; startApp(); };
+    return;
+  }
+  $('#empty').innerHTML = '<div class="empty-icon">📖</div><p>아직 책이 없어요.<br>epub 파일을 끌어다 놓거나 <b>+ 책 추가</b>를 눌러주세요.</p><p class="muted small">책 파일은 이 기기의 브라우저에만 저장되고, 어디에도 업로드되지 않아요.</p>';
   await renderShelf();
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-})();
+}
+startApp();
 })();
