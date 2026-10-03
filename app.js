@@ -320,10 +320,11 @@ let cfiTool = null, searchMark = null;
 const touchGuard = { t: 0 };
 
 const saveState = debounce(async () => {
-  if (!cur) return;
-  await DB.put('state', cur.state);
-  const m = await DB.get('meta', cur.id);
-  if (m) { m.progress = cur.state.percentage || 0; m.opened = Date.now(); await DB.put('meta', m); }
+  const c = cur; // 저장 도중 책이 닫혀도 안전하도록 복사해 둠
+  if (!c) return;
+  await DB.put('state', c.state);
+  const m = await DB.get('meta', c.id);
+  if (m) { m.progress = c.state.percentage || 0; m.opened = Date.now(); await DB.put('meta', m); }
 }, 500);
 
 function setView(name) { $('#library').hidden = name !== 'library'; $('#reader').hidden = name !== 'reader'; }
@@ -465,10 +466,23 @@ function setupZone(el, dir) {
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 setupZone($('#tapL'), -1); setupZone($('#tapR'), +1);
+(function () {
+  const el = $('#tapC'); let sx = 0, sy = 0, st = 0, id = null;
+  el.addEventListener('pointerdown', e => { id = e.pointerId; sx = e.clientX; sy = e.clientY; st = Date.now(); });
+  el.addEventListener('pointercancel', () => { id = null; });
+  el.addEventListener('pointerup', e => {
+    if (e.pointerId !== id) return; id = null;
+    if (Math.abs(e.clientX - sx) > 14 || Math.abs(e.clientY - sy) > 14 || Date.now() - st > 600) return;
+    if (closeOverlaysExceptDrawer()) return;
+    if (!$('#drawer').hidden) return;
+    toggleChrome();
+  });
+})();
 
 function scrollEl() { return rendition && rendition.manager && rendition.manager.container; }
 function goNext() {
   if (!rendition) return;
+  if (!$('#topbar').classList.contains('hide')) setChrome(false);
   if (S.flow === 'scroll') {
     const c = scrollEl();
     if (c && c.scrollTop + c.clientHeight < c.scrollHeight - 6) { c.scrollBy({ top: c.clientHeight * 0.88, behavior: 'smooth' }); return; }
@@ -477,6 +491,7 @@ function goNext() {
 }
 function goPrev() {
   if (!rendition) return;
+  if (!$('#topbar').classList.contains('hide')) setChrome(false);
   if (S.flow === 'scroll') {
     const c = scrollEl();
     if (c && c.scrollTop > 6) { c.scrollBy({ top: -c.clientHeight * 0.88, behavior: 'smooth' }); return; }
@@ -546,6 +561,7 @@ function calcPct(l) {
   return Math.min(1, (W.cum[idx] + Math.max(0, Math.min(1, frac)) * W.sizes[idx]) / W.total);
 }
 function onRelocated(l) {
+  if (!cur) return;
   loc = l;
   const cfi = l.start.cfi;
   const pct = calcPct(l);
@@ -555,12 +571,13 @@ function onRelocated(l) {
   highlightToc();
 }
 function refreshProgress() {
-  if (!loc) return;
+  if (!loc || !cur) return;
   const pct = calcPct(loc); cur.state.percentage = pct;
   const ch = chapterFor(loc);
   $('#chapterLabel').textContent = ch ? ch.label : '';
   $('#progressLabel').textContent = (pct * 100).toFixed(1) + '%';
   $('#slider').value = Math.round(pct * 1000);
+  $('#miniProgress').textContent = (pct * 100).toFixed(1) + '%';
 }
 $('#slider').addEventListener('change', e => {
   if (!W) return;
@@ -805,6 +822,7 @@ function changed(key) {
   if (key === 'theme') cur.state.highlights.forEach(addHighlightToView);
 }
 async function rebuildRendition() {
+  if (!cur) return;
   const cfi = cur.state.cfi;
   const file = await DB.get('files', cur.id);
   try { rendition.destroy(); } catch (e) {}

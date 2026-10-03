@@ -155,3 +155,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 /* 가장자리 탭 영역: 책 본문(iframe)과 별개로 바깥 문서에서 터치를 받아 아이패드에서도 확실히 넘어가게 함 */
 .tapzone{position:absolute;top:0;bottom:0;width:15%;z-index:10;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .tapzone.left{left:0}.tapzone.right{right:0}
+
+.tapzone.center{left:15%;right:15%;top:auto;bottom:0;width:auto;height:calc(var(--sab) + 40px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:calc(var(--sab) + 6px)}
+#miniProgress{position:static;font-size:12px;color:var(--muted);pointer-events:none}
