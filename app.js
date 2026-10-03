@@ -315,7 +315,7 @@ $('#restoreInput').addEventListener('change', async e => {
    리더
    ===================================================== */
 let book = null, rendition = null, cur = null; // cur: 현재 책 {id, meta, state}
-let loc = null, tocFlat = [], locReady = false;
+let loc = null, tocFlat = [], W = null;
 let cfiTool = null, searchMark = null;
 const touchGuard = { t: 0 };
 
@@ -334,7 +334,7 @@ async function openBook(id) {
   setView('reader'); $('#loading').hidden = false;
   cur = { id, meta, state: { id, cfi: null, percentage: 0, bookmarks: [], highlights: [], ...(st || {}) } };
   $('#bookTitle').textContent = meta.title;
-  locReady = false; loc = null; tocFlat = [];
+  loc = null; tocFlat = []; W = null;
   $('#slider').disabled = true; $('#slider').value = 0;
   try {
     await initEngine(file.data, cur.state.cfi);
@@ -351,21 +351,15 @@ async function openBook(id) {
 async function initEngine(data, cfi) {
   book = ePub(data.slice(0));
   cfiTool = new ePub.CFI();
-  locReady = false;
+  W = null;
   createRendition();
   await book.ready;
   buildToc();
   await rendition.display(cfi || undefined);
   applyStyles();
   cur.state.highlights.forEach(addHighlightToView);
-  if (cur.state.locations) { try { book.locations.load(cur.state.locations); locReady = true; } catch (e) {} }
-  const b = book;
-  if (!locReady) {
-    b.locations.generate(1500).then(() => {
-      if (b !== book || !cur) return;
-      locReady = true; cur.state.locations = b.locations.save(); saveState(); refreshProgress();
-    }).catch(() => {});
-  } else refreshProgress();
+  buildWeights();
+  refreshProgress();
   $('#slider').disabled = false;
 }
 
@@ -438,10 +432,16 @@ function setupContent(contents) {
   });
   doc.addEventListener('keydown', onKey);
 }
+function closeOverlaysExceptDrawer() {
+  let any = false;
+  if (!$('#menu').hidden) { $('#menu').hidden = true; any = true; }
+  if (!$('#annot').hidden) { closeAnnot(); any = true; }
+  if (!$('#settings').hidden) { $('#settings').hidden = true; any = true; }
+  return any;
+}
 function handleTap(x, target) {
   if (target && target.closest && target.closest('a')) return;
-  if (!$('#annot').hidden) { closeAnnot(); return; }
-  if (!$('#settings').hidden) { $('#settings').hidden = true; return; }
+  if (closeOverlaysExceptDrawer()) return;
   const w = innerWidth;
   if (x < w * 0.28) goPrev();
   else if (x > w * 0.72) goNext();
@@ -479,6 +479,7 @@ function setChrome(show) { $('#topbar').classList.toggle('hide', !show); $('#bot
 function toggleChrome() { setChrome($('#topbar').classList.contains('hide')); }
 function closeOverlays() {
   let any = false;
+  if (!$('#menu').hidden) { $('#menu').hidden = true; any = true; }
   if (!$('#drawer').hidden) { closeDrawer(); any = true; }
   if (!$('#settings').hidden) { $('#settings').hidden = true; any = true; }
   if (!$('#annot').hidden) { closeAnnot(); any = true; }
@@ -499,11 +500,37 @@ function chapterFor(cfiLoc) {
   for (const t of tocFlat) { if (t.idx <= idx && t.idx >= bi) { best = t; bi = t.idx; } }
   return best;
 }
+
+/* 책 전체 진행도: 챕터(파일) 크기를 가중치로 계산 — 책이 커도 즉시 계산됨 */
+function buildWeights() {
+  const items = book.spine.spineItems;
+  const sizes = items.map(it => {
+    try {
+      const p = decodeURIComponent(String(it.url || it.href).replace(/^\/+/, ''));
+      const f = book.archive.zip.file(p) || book.archive.zip.file(decodeURIComponent(it.href));
+      return Math.max(1, (f && f._data && f._data.uncompressedSize) || 1);
+    } catch (e) { return 1; }
+  });
+  const cum = [0]; sizes.forEach(n => cum.push(cum[cum.length - 1] + n));
+  W = { cum, sizes, total: cum[cum.length - 1] || 1 };
+}
+function calcPct(l) {
+  if (!l || !l.start) return 0;
+  if (!W) return l.start.percentage || 0;
+  const idx = Math.min(l.start.index, W.sizes.length - 1);
+  let frac = 0;
+  if (S.flow === 'scroll') {
+    const c = scrollEl();
+    if (c && c.scrollHeight > c.clientHeight) frac = c.scrollTop / (c.scrollHeight - c.clientHeight);
+  } else if (l.start.displayed && l.start.displayed.total) {
+    frac = (l.start.displayed.page - 1) / l.start.displayed.total;
+  }
+  return Math.min(1, (W.cum[idx] + Math.max(0, Math.min(1, frac)) * W.sizes[idx]) / W.total);
+}
 function onRelocated(l) {
   loc = l;
   const cfi = l.start.cfi;
-  let pct = l.start.percentage || 0;
-  if (locReady) { try { pct = book.locations.percentageFromCfi(cfi); } catch (e) {} }
+  const pct = calcPct(l);
   cur.state.cfi = cfi; cur.state.percentage = pct; saveState();
   refreshProgress();
   updateBookmarkButton();
@@ -511,17 +538,17 @@ function onRelocated(l) {
 }
 function refreshProgress() {
   if (!loc) return;
-  let pct = cur.state.percentage || 0;
-  if (locReady) { try { pct = book.locations.percentageFromCfi(loc.start.cfi); cur.state.percentage = pct; } catch (e) {} }
+  const pct = calcPct(loc); cur.state.percentage = pct;
   const ch = chapterFor(loc);
   $('#chapterLabel').textContent = ch ? ch.label : '';
-  $('#progressLabel').textContent = (pct * 100).toFixed(1) + '%' + (locReady ? '' : ' (계산 중…)');
+  $('#progressLabel').textContent = (pct * 100).toFixed(1) + '%';
   $('#slider').value = Math.round(pct * 1000);
 }
 $('#slider').addEventListener('change', e => {
-  if (!locReady) { toast('전체 위치 계산이 끝나면 사용할 수 있어요'); return; }
-  const cfi = book.locations.cfiFromPercentage(e.target.value / 1000);
-  rendition.display(cfi);
+  if (!W) return;
+  const target = (e.target.value / 1000) * W.total;
+  let i = W.cum.findIndex((c, k) => k < W.sizes.length && target < W.cum[k + 1]); if (i < 0) i = W.sizes.length - 1;
+  const it = book.spine.get(i); if (it) rendition.display(it.href);
 });
 $('#slider').addEventListener('input', e => { $('#progressLabel').textContent = (e.target.value / 10).toFixed(1) + '%'; });
 $('#btnPrev').addEventListener('click', goPrev);
@@ -555,6 +582,7 @@ function bookmarkIn(l) {
 function updateBookmarkButton() {
   const on = bookmarkIn(loc).length > 0;
   const b = $('#btnBookmark'); b.textContent = on ? '★' : '☆'; b.classList.toggle('on', on);
+  $('#menuBookmark').lastChild.textContent = on ? '북마크 해제' : '이 쪽 북마크';
 }
 $('#btnBookmark').addEventListener('click', () => {
   if (!loc) return;
@@ -718,14 +746,27 @@ function setTab(t) {
 $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#drawerClose').addEventListener('click', closeDrawer);
 $('#scrim').addEventListener('click', closeDrawer);
-$('#btnToc').addEventListener('click', () => openDrawer('toc'));
 
 /* 설정 시트 */
 function syncSettingsUI() {
   $('#fsVal').textContent = S.size + 'px'; $('#lhVal').textContent = S.lh.toFixed(1);
   $$('#settings .seg').forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', S[seg.dataset.key] === b.dataset.v)));
 }
-$('#btnSettings').addEventListener('click', () => { closeDrawer(); closeAnnot(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); });
+function toggleSettings() { closeDrawer(); closeAnnot(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
+$('#menuBtn').addEventListener('click', e => { e.stopPropagation(); const m = $('#menu'); const show = m.hidden; closeOverlays(); m.hidden = !show; });
+$('#menu').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $('#menu').hidden = true;
+  switch (b.dataset.act) {
+    case 'toc': openDrawer('toc'); break;
+    case 'search': openDrawer('search'); break;
+    case 'marks': openDrawer('marks'); break;
+    case 'notes': openDrawer('notes'); break;
+    case 'settings': toggleSettings(); break;
+    case 'bookmark': $('#btnBookmark').click(); break;
+    case 'back': closeBook(); break;
+  }
+});
 $$('[data-close]').forEach(b => b.addEventListener('click', () => ($('#' + b.dataset.close).hidden = true)));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 $('#fsDown').onclick = () => { S.size = clamp(S.size - 1, 12, 48); changed(); };

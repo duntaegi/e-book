@@ -48,10 +48,19 @@
   <header id="topbar" class="chrome top">
     <button id="btnBack" class="icon" aria-label="서재로">‹</button>
     <div class="title"><span id="bookTitle"></span></div>
-    <button id="btnToc" class="icon" aria-label="목차 / 검색 / 북마크 / 메모">☰</button>
     <button id="btnBookmark" class="icon" aria-label="북마크">☆</button>
-    <button id="btnSettings" class="icon" aria-label="보기 설정">Aa</button>
   </header>
+
+  <button id="menuBtn" class="fab" aria-label="메뉴">☰</button>
+  <nav id="menu" class="menu" hidden>
+    <button data-act="toc"><span>📑</span>목차</button>
+    <button data-act="search"><span>🔍</span>검색</button>
+    <button data-act="bookmark" id="menuBookmark"><span>🔖</span>이 쪽 북마크</button>
+    <button data-act="marks"><span>⭐</span>북마크 목록</button>
+    <button data-act="notes"><span>✏️</span>하이라이트·메모</button>
+    <button data-act="settings"><span>Aa</span>보기 설정</button>
+    <button data-act="back"><span>📚</span>서재로</button>
+  </nav>
 
   <footer id="bottombar" class="chrome bottom">
     <div id="chapterLabel" class="chapter"></div>
