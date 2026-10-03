@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="내 서재">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>내 서재</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="light">
+
+<!-- 서재 -->
+<main id="library" class="view">
+  <header class="lib-head">
+    <h1>내 서재</h1>
+    <div class="lib-actions">
+      <button id="btnReorder" class="btn ghost">순서 편집</button>
+      <button id="btnBackup" class="btn ghost" title="메모·진행도 백업/복원">백업</button>
+      <label class="btn primary" for="fileInput">+ 책 추가</label>
+      <input id="fileInput" type="file" accept=".epub,application/epub+zip" multiple hidden>
+    </div>
+  </header>
+  <div id="iosTip" class="tip" hidden>
+    아이패드 Safari에서 <b>공유 버튼 → 홈 화면에 추가</b>를 하면 앱처럼 전체 화면으로 열려요.
+    <button id="iosTipClose" class="btn ghost small">닫기</button>
+  </div>
+  <div id="reorderTip" class="tip" hidden><span>책을 <b>꾹 눌렀다가 끌어서</b> 원하는 자리에 놓으세요. 다 정리했으면 오른쪽 위 “완료”를 누르세요.</span></div>
+  <section id="shelf" class="shelf"></section>
+  <div id="empty" class="empty" hidden>
+    <div class="empty-icon">📖</div>
+    <p>아직 책이 없어요.<br>epub 파일을 끌어다 놓거나 <b>+ 책 추가</b>를 눌러주세요.</p>
+    <p class="muted small">책 파일은 이 기기의 브라우저에만 저장되고, 어디에도 업로드되지 않아요.</p>
+  </div>
+</main>
+
+<!-- 리더 -->
+<main id="reader" class="view" hidden>
+  <div id="viewer"></div>
+
+  <header id="topbar" class="chrome top">
+    <button id="btnBack" class="icon" aria-label="서재로">‹</button>
+    <div class="title"><span id="bookTitle"></span></div>
+    <button id="btnToc" class="icon" aria-label="목차 / 검색 / 북마크 / 메모">☰</button>
+    <button id="btnBookmark" class="icon" aria-label="북마크">☆</button>
+    <button id="btnSettings" class="icon" aria-label="보기 설정">Aa</button>
+  </header>
+
+  <footer id="bottombar" class="chrome bottom">
+    <div id="chapterLabel" class="chapter"></div>
+    <div class="seek">
+      <button id="btnPrev" class="icon small" aria-label="이전">‹</button>
+      <input id="slider" type="range" min="0" max="1000" value="0">
+      <button id="btnNext" class="icon small" aria-label="다음">›</button>
+    </div>
+    <div id="progressLabel" class="progress">0%</div>
+  </footer>
+
+  <div id="loading" class="loading" hidden>불러오는 중…</div>
+</main>
+
+<!-- 사이드 패널 -->
+<aside id="drawer" class="drawer" hidden>
+  <div class="tabs" role="tablist">
+    <button data-tab="toc" class="tab active">목차</button>
+    <button data-tab="search" class="tab">검색</button>
+    <button data-tab="marks" class="tab">북마크</button>
+    <button data-tab="notes" class="tab">메모</button>
+    <button id="drawerClose" class="icon small" aria-label="닫기">✕</button>
+  </div>
+  <div class="tabbody" id="tab-toc"></div>
+  <div class="tabbody" id="tab-search" hidden>
+    <form id="searchForm" class="searchbar">
+      <input id="searchInput" type="search" placeholder="책 안에서 검색" enterkeyhint="search" autocomplete="off">
+      <button class="btn primary small" type="submit">검색</button>
+    </form>
+    <div id="searchStatus" class="muted small"></div>
+    <div id="searchResults"></div>
+  </div>
+  <div class="tabbody" id="tab-marks" hidden></div>
+  <div class="tabbody" id="tab-notes" hidden>
+    <div class="row-actions"><button id="btnExportNotes" class="btn ghost small">메모 내보내기(.md)</button></div>
+    <div id="noteList"></div>
+  </div>
+</aside>
+<div id="scrim" class="scrim" hidden></div>
+
+<!-- 보기 설정 -->
+<section id="settings" class="sheet settings" hidden>
+  <div class="sheet-head"><b>보기 설정</b><button class="icon small" data-close="settings">✕</button></div>
+  <div class="set-row"><span>글자 크기</span>
+    <div class="stepper"><button id="fsDown" class="btn small">가</button><span id="fsVal"></span><button id="fsUp" class="btn small big">가</button></div></div>
+  <div class="set-row"><span>줄 간격</span>
+    <div class="stepper"><button id="lhDown" class="btn small">−</button><span id="lhVal"></span><button id="lhUp" class="btn small">+</button></div></div>
+  <div class="set-row"><span>글꼴</span>
+    <div class="seg" data-key="font">
+      <button data-v="gothic">고딕</button><button data-v="myeongjo">명조</button><button data-v="original">책 원본</button></div></div>
+  <div class="set-row"><span>테마</span>
+    <div class="seg themes" data-key="theme">
+      <button data-v="light" class="t-light">라이트</button><button data-v="sepia" class="t-sepia">세피아</button>
+      <button data-v="dark" class="t-dark">다크</button><button data-v="black" class="t-black">블랙</button></div></div>
+  <div class="set-row"><span>보기 방식</span>
+    <div class="seg" data-key="flow"><button data-v="paged">페이지 넘김</button><button data-v="scroll">스크롤</button></div></div>
+  <div class="set-row"><span>화면 나누기</span>
+    <div class="seg" data-key="spread"><button data-v="auto">가로면 2쪽</button><button data-v="none">항상 1쪽</button></div></div>
+  <div class="set-row"><span>정렬</span>
+    <div class="seg" data-key="align"><button data-v="left">왼쪽</button><button data-v="justify">양쪽</button></div></div>
+</section>
+
+<!-- 하이라이트/메모 시트 -->
+<section id="annot" class="sheet annot" hidden>
+  <div id="annotQuote" class="quote"></div>
+  <div class="colors" id="annotColors">
+    <button data-c="yellow" style="--c:#ffd84d"></button>
+    <button data-c="green" style="--c:#7ddc8a"></button>
+    <button data-c="blue" style="--c:#7cb8ff"></button>
+    <button data-c="pink" style="--c:#ff9ec4"></button>
+  </div>
+  <textarea id="annotNote" rows="2" placeholder="메모 (선택)"></textarea>
+  <div class="annot-actions">
+    <button id="annotCopy" class="btn small">복사</button>
+    <button id="annotDelete" class="btn small danger" hidden>삭제</button>
+    <span class="grow"></span>
+    <button id="annotSave" class="btn primary small">저장</button>
+    <button id="annotClose" class="btn ghost small">닫기</button>
+  </div>
+</section>
+
+<!-- 확인 대화상자 / 토스트 -->
+<div id="dialog" class="dialog" hidden>
+  <div class="dialog-box">
+    <p id="dialogMsg"></p>
+    <div class="dialog-actions">
+      <button id="dialogCancel" class="btn ghost">취소</button>
+      <button id="dialogOk" class="btn danger">확인</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+<input id="restoreInput" type="file" accept="application/json,.json" hidden>
+<div id="dropHint" class="drop-hint" hidden>여기에 epub 파일을 놓으세요</div>
+
+<script src="lib/jszip.min.js"></script>
+<script src="lib/epub.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
