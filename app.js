@@ -109,6 +109,7 @@ function download(name, text, type) {
 function applyChromeTheme() {
   document.body.dataset.theme = S.theme;
   const m = $('meta[name=theme-color]'); if (m) m.content = THEMES[S.theme].meta;
+  const ms = $('#metaStatus'); if (ms) ms.content = (S.theme === 'dark' || S.theme === 'black') ? 'black' : 'default';
 }
 
 /* =====================================================

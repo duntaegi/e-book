@@ -7,7 +7,8 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="default" id="metaStatus">
+<script>try{var _s=JSON.parse(localStorage.getItem("reader.settings")||"{}"),_t=_s.theme||"light";document.getElementById("metaStatus").content=(_t==="dark"||_t==="black")?"black":"default";document.querySelector("meta[name=theme-color]").content={light:"#ffffff",sepia:"#f4ecd8",dark:"#1e1f22",black:"#000000"}[_t]||"#ffffff"}catch(e){}</script>
 <meta name="apple-mobile-web-app-title" content="내 서재">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
