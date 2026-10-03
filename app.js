@@ -737,6 +737,21 @@ function syncSettingsUI() {
   $('#fsVal').textContent = S.size + 'px'; $('#lhVal').textContent = S.lh.toFixed(1);
   $$('#settings .seg').forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', S[seg.dataset.key] === b.dataset.v)));
 }
+/* 전체 화면 (지원하는 브라우저에서만 동작) */
+function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+function toggleFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  if (!req) { toast('이 브라우저(또는 홈 화면 앱)에서는 전체 화면을 지원하지 않아요', 3500); return; }
+  try {
+    const p = fsElement() ? exit.call(document) : req.call(el);
+    if (p && p.catch) p.catch(() => toast('전체 화면으로 바꾸지 못했어요', 3000));
+  } catch (e) { toast('전체 화면으로 바꾸지 못했어요', 3000); }
+}
+function syncFullscreenLabel() { const m = $('#menuFull'); if (m) m.lastChild.textContent = fsElement() ? '전체 화면 끄기' : '전체 화면 켜기'; }
+document.addEventListener('fullscreenchange', syncFullscreenLabel);
+document.addEventListener('webkitfullscreenchange', syncFullscreenLabel);
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
 $('#btnMenu').addEventListener('click', e => { e.stopPropagation(); const m = $('#menu'); const show = m.hidden; closeOverlays(); m.hidden = !show; });
 $('#menu').addEventListener('click', e => {
@@ -747,6 +762,7 @@ $('#menu').addEventListener('click', e => {
     case 'search': openDrawer('search'); break;
     case 'marks': openDrawer('marks'); break;
     case 'settings': toggleSettings(); break;
+    case 'fullscreen': toggleFullscreen(); break;
     case 'bookmark': $('#btnBookmark').click(); break;
   }
 });
