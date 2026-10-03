@@ -235,7 +235,7 @@ async function importFile(file) {
   let title = file.name.replace(/\.epub$/i, ''), author = '', cover = null;
   try {
     const b = ePub(buf.slice(0));
-    await b.ready;
+    await Promise.race([b.ready, new Promise((_, r) => setTimeout(() => r(new Error('시간 초과: epub 형식이 아니거나 손상된 파일')), 20000))]);
     const md = await b.loaded.metadata;
     if (md.title) title = md.title; if (md.creator) author = md.creator;
     cover = await findFirstImage(b);
@@ -246,8 +246,8 @@ async function importFile(file) {
       } catch (e) {}
     }
     b.destroy();
-  } catch (e) { console.warn(e); toast('책 정보를 읽지 못했어요. 파일이 손상되었을 수 있어요.'); return; }
-  await DB.put('files', { id, data: buf });
+  } catch (e) { console.warn(e); throw new Error('책 파일을 읽지 못했어요 (' + (e && e.message ? e.message : e) + ')'); }
+  try { await DB.put('files', { id, data: buf }); } catch (e) { throw new Error('기기에 저장하지 못했어요. 저장 공간이 부족하거나 브라우저가 막았을 수 있어요 (' + (e && e.name ? e.name : e) + ')'); }
   const all = await DB.all('meta');
   const order = Math.max(0, ...all.map(x => x.order || 0)) + 1;
   await DB.put('meta', { id, title, author, cover, added: Date.now(), opened: 0, progress: 0, size: buf.byteLength, order });
@@ -255,10 +255,16 @@ async function importFile(file) {
   toast('추가했어요: ' + title);
 }
 async function importFiles(files) {
-  for (const f of files) await importFile(f);
+  const errs = [];
+  for (const f of files) {
+    try { await importFile(f); }
+    catch (e) { console.error(e); errs.push(f.name + '\n→ ' + (e && e.message ? e.message : e)); }
+  }
   await renderShelf();
+  if (errs.length) { $('#dialogCancel').hidden = true; await ask('책을 추가하지 못했어요.\n\n' + errs.join('\n\n'), '확인'); $('#dialogCancel').hidden = false; }
 }
 $('#fileInput').addEventListener('change', async e => { const f = [...e.target.files]; e.target.value = ''; await importFiles(f); });
+addEventListener('unhandledrejection', e => { try { toast('오류: ' + ((e.reason && e.reason.message) || e.reason), 6000); } catch (_) {} });
 let dragN = 0;
 addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragN++; $('#dropHint').hidden = false; } });
 addEventListener('dragleave', () => { dragN = Math.max(0, dragN - 1); if (!dragN) $('#dropHint').hidden = true; });
