@@ -158,3 +158,6 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 .tapzone.center{left:15%;right:15%;top:auto;bottom:0;width:auto;height:calc(var(--sab) + 40px);display:flex;align-items:flex-end;justify-content:center;padding-bottom:calc(var(--sab) + 6px)}
 #miniProgress{position:static;font-size:12px;color:var(--muted);pointer-events:none}
+
+.tapzone.mid{left:15%;right:15%;top:0;bottom:calc(var(--sab) + 40px);width:auto;z-index:9}
+body.selmode .tapzone.mid{display:none}

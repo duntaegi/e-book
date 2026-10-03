@@ -490,6 +490,20 @@ function setupZone(el, dir) {
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 setupZone($('#tapL'), -1); setupZone($('#tapR'), +1);
+function setupToggleZone(el) {
+  let sx = 0, sy = 0, st = 0, id = null;
+  el.addEventListener('pointerdown', e => { id = e.pointerId; sx = e.clientX; sy = e.clientY; st = Date.now(); });
+  el.addEventListener('pointercancel', () => { id = null; });
+  el.addEventListener('pointerup', e => {
+    if (e.pointerId !== id) return; id = null;
+    if (Math.abs(e.clientX - sx) > 14 || Math.abs(e.clientY - sy) > 14 || Date.now() - st > 600) return;
+    if (closeOverlaysExceptDrawer()) return;
+    if (!$('#drawer').hidden) return;
+    toggleChrome();
+  });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+setupToggleZone($('#tapM'));
 (function () {
   const el = $('#tapC'); let sx = 0, sy = 0, st = 0, id = null;
   el.addEventListener('pointerdown', e => { id = e.pointerId; sx = e.clientX; sy = e.clientY; st = Date.now(); });
@@ -811,6 +825,11 @@ function syncSettingsUI() {
   $('#fsVal').textContent = S.size + 'px'; $('#lhVal').textContent = S.lh.toFixed(1);
   $$('#settings .seg').forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', S[seg.dataset.key] === b.dataset.v)));
 }
+function setSelMode(on) {
+  document.body.classList.toggle('selmode', on);
+  $('#menuSelect').lastChild.textContent = on ? '글자 선택 모드 끄기' : '글자 선택 모드 켜기';
+  if (on) { setChrome(false); toast('선택 모드: 글자를 길게 눌러 하이라이트하세요. 화면 가운데 탭은 잠시 꺼져요. (메뉴에서 끄기)', 4500); }
+}
 function toggleSettings() { closeDrawer(); closeAnnot(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
 $('#menuBtn').addEventListener('click', e => { e.stopPropagation(); const m = $('#menu'); const show = m.hidden; closeOverlays(); m.hidden = !show; });
 $('#menu').addEventListener('click', e => {
@@ -823,6 +842,7 @@ $('#menu').addEventListener('click', e => {
     case 'notes': openDrawer('notes'); break;
     case 'settings': toggleSettings(); break;
     case 'bookmark': $('#btnBookmark').click(); break;
+    case 'select': setSelMode(!document.body.classList.contains('selmode')); break;
     case 'back': closeBook(); break;
   }
 });
@@ -858,6 +878,7 @@ async function rebuildRendition() {
 /* 책 닫기 */
 function closeBook() {
   saveState.flush();
+  setSelMode(false);
   closeOverlays();
   try { rendition && rendition.destroy(); } catch (e) {}
   try { book && book.destroy(); } catch (e) {}
