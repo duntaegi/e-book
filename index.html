@@ -53,18 +53,15 @@
     <button id="btnBack" class="icon" aria-label="서재로">‹</button>
     <div class="title"><span id="bookTitle"></span></div>
     <button id="btnBookmark" class="icon" aria-label="북마크">☆</button>
+    <button id="btnMenu" class="icon" aria-label="메뉴">☰</button>
   </header>
 
-  <button id="menuBtn" class="fab" aria-label="메뉴">☰</button>
   <nav id="menu" class="menu" hidden>
     <button data-act="toc"><span>📑</span>목차</button>
     <button data-act="search"><span>🔍</span>검색</button>
     <button data-act="bookmark" id="menuBookmark"><span>🔖</span>이 쪽 북마크</button>
     <button data-act="marks"><span>⭐</span>북마크 목록</button>
-    <button data-act="notes"><span>✏️</span>하이라이트·메모</button>
-    <button data-act="select" id="menuSelect"><span>🖍️</span>글자 선택 모드 켜기</button>
     <button data-act="settings"><span>Aa</span>보기 설정</button>
-    <button data-act="back"><span>📚</span>서재로</button>
   </nav>
 
   <footer id="bottombar" class="chrome bottom">
@@ -86,7 +83,6 @@
     <button data-tab="toc" class="tab active">목차</button>
     <button data-tab="search" class="tab">검색</button>
     <button data-tab="marks" class="tab">북마크</button>
-    <button data-tab="notes" class="tab">메모</button>
     <button id="drawerClose" class="icon small" aria-label="닫기">✕</button>
   </div>
   <div class="tabbody" id="tab-toc"></div>
@@ -99,10 +95,6 @@
     <div id="searchResults"></div>
   </div>
   <div class="tabbody" id="tab-marks" hidden></div>
-  <div class="tabbody" id="tab-notes" hidden>
-    <div class="row-actions"><button id="btnExportNotes" class="btn ghost small">메모 내보내기(.md)</button></div>
-    <div id="noteList"></div>
-  </div>
 </aside>
 <div id="scrim" class="scrim" hidden></div>
 
@@ -126,25 +118,6 @@
     <div class="seg" data-key="spread"><button data-v="auto">가로면 2쪽</button><button data-v="none">항상 1쪽</button></div></div>
   <div class="set-row"><span>정렬</span>
     <div class="seg" data-key="align"><button data-v="left">왼쪽</button><button data-v="justify">양쪽</button></div></div>
-</section>
-
-<!-- 하이라이트/메모 시트 -->
-<section id="annot" class="sheet annot" hidden>
-  <div id="annotQuote" class="quote"></div>
-  <div class="colors" id="annotColors">
-    <button data-c="yellow" style="--c:#ffd84d"></button>
-    <button data-c="green" style="--c:#7ddc8a"></button>
-    <button data-c="blue" style="--c:#7cb8ff"></button>
-    <button data-c="pink" style="--c:#ff9ec4"></button>
-  </div>
-  <textarea id="annotNote" rows="2" placeholder="메모 (선택)"></textarea>
-  <div class="annot-actions">
-    <button id="annotCopy" class="btn small">복사</button>
-    <button id="annotDelete" class="btn small danger" hidden>삭제</button>
-    <span class="grow"></span>
-    <button id="annotSave" class="btn primary small">저장</button>
-    <button id="annotClose" class="btn ghost small">닫기</button>
-  </div>
 </section>
 
 <!-- 확인 대화상자 / 토스트 -->

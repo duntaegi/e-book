@@ -161,3 +161,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 .tapzone.mid{left:15%;right:15%;top:0;bottom:calc(var(--sab) + 40px);width:auto;z-index:9}
 body.selmode .tapzone.mid{display:none}
+
+/* 쪽 넘김 40% / 가운데 20% */
+.tapzone{width:40%}
+.tapzone.mid{left:40%;right:40%}
+.tapzone.center{left:40%;right:40%}
+.chrome.top{padding-right:calc(var(--sar) + 10px)}
+.menu{top:calc(var(--sat) + 62px)}

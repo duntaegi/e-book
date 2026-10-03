@@ -363,7 +363,7 @@ async function openBook(id) {
   $('#slider').disabled = true; $('#slider').value = 0;
   try {
     await initEngine(file.data, cur.state.cfi);
-    renderMarks(); renderNotes();
+    renderMarks();
     $('#loading').hidden = true;
     setTimeout(() => setChrome(false), 1800);
   } catch (e) {
@@ -382,7 +382,6 @@ async function initEngine(data, cfi) {
   buildToc();
   await rendition.display(cfi || undefined);
   applyStyles();
-  cur.state.highlights.forEach(addHighlightToView);
   buildWeights();
   refreshProgress();
   $('#slider').disabled = false;
@@ -398,7 +397,6 @@ function createRendition() {
     allowScriptedContent: false,
   });
   rendition.on('relocated', onRelocated);
-  rendition.on('selected', onSelected);
   rendition.hooks.content.register(setupContent);
   rendition.on('rendered', () => { /* 새 섹션 렌더 */ });
   applyStyles();
@@ -460,7 +458,6 @@ function setupContent(contents) {
 function closeOverlaysExceptDrawer() {
   let any = false;
   if (!$('#menu').hidden) { $('#menu').hidden = true; any = true; }
-  if (!$('#annot').hidden) { closeAnnot(); any = true; }
   if (!$('#settings').hidden) { $('#settings').hidden = true; any = true; }
   return any;
 }
@@ -546,14 +543,14 @@ function onKey(e) {
 addEventListener('keydown', onKey);
 
 /* 크롬(상단/하단 바) */
-function setChrome(show) { $('#topbar').classList.toggle('hide', !show); $('#bottombar').classList.toggle('hide', !show); }
+function setChrome(show) {
+  if (!show) { const m = $('#menu'); if (m) m.hidden = true; } $('#topbar').classList.toggle('hide', !show); $('#bottombar').classList.toggle('hide', !show); }
 function toggleChrome() { setChrome($('#topbar').classList.contains('hide')); }
 function closeOverlays() {
   let any = false;
   if (!$('#menu').hidden) { $('#menu').hidden = true; any = true; }
   if (!$('#drawer').hidden) { closeDrawer(); any = true; }
   if (!$('#settings').hidden) { $('#settings').hidden = true; any = true; }
-  if (!$('#annot').hidden) { closeAnnot(); any = true; }
   return any;
 }
 
@@ -683,91 +680,6 @@ function renderMarks() {
   });
 }
 
-/* 하이라이트 / 메모 */
-let annot = null; // {cfiRange, text, hl?}
-function hlStyles(color) { return { 'fill': HL_COLORS[color] || color, 'fill-opacity': '0.38', 'mix-blend-mode': S.theme === 'dark' || S.theme === 'black' ? 'normal' : 'multiply' }; }
-function addHighlightToView(h) {
-  try {
-    rendition.annotations.remove(h.cfiRange, 'highlight');
-    rendition.annotations.add('highlight', h.cfiRange, { id: h.id }, () => openAnnotFor(h), 'hl-' + h.id, hlStyles(h.color));
-  } catch (e) { console.warn('highlight failed', e); }
-}
-function onSelected(cfiRange, contents) {
-  let text = '';
-  try { text = rendition.getRange(cfiRange).toString().trim(); } catch (e) {}
-  if (!text) return;
-  const existing = cur.state.highlights.find(h => h.cfiRange === cfiRange);
-  annot = { cfiRange, text, hl: existing || null, contents };
-  showAnnot();
-}
-function openAnnotFor(h) { annot = { cfiRange: h.cfiRange, text: h.text, hl: h, contents: null }; showAnnot(); }
-function showAnnot() {
-  closeDrawer(); $('#settings').hidden = true;
-  $('#annotQuote').textContent = annot.text.length > 140 ? annot.text.slice(0, 140) + '…' : annot.text;
-  $('#annotNote').value = annot.hl ? (annot.hl.note || '') : '';
-  $('#annotDelete').hidden = !annot.hl;
-  setColorUI(annot.hl ? annot.hl.color : null);
-  $('#annot').hidden = false;
-}
-function setColorUI(c) { $$('#annotColors button').forEach(b => b.classList.toggle('on', b.dataset.c === c)); }
-function closeAnnot() {
-  $('#annot').hidden = true;
-  try { annot && annot.contents && annot.contents.window.getSelection().removeAllRanges(); } catch (e) {}
-  annot = null;
-}
-function saveAnnot(color) {
-  if (!annot) return;
-  const note = $('#annotNote').value.trim();
-  if (annot.hl) {
-    annot.hl.note = note; if (color) annot.hl.color = color;
-    addHighlightToView(annot.hl);
-  } else {
-    const col = color || 'yellow';
-    const ch = chapterFor(loc);
-    const h = { id: uid(), cfiRange: annot.cfiRange, text: annot.text, note, color: col, label: ch ? ch.label : '', pct: cur.state.percentage, created: Date.now() };
-    cur.state.highlights.push(h); annot.hl = h; addHighlightToView(h);
-    $('#annotDelete').hidden = false;
-  }
-  saveState(); renderNotes();
-}
-$('#annotColors').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
-  setColorUI(b.dataset.c); saveAnnot(b.dataset.c);
-  try { annot.contents && annot.contents.window.getSelection().removeAllRanges(); } catch (e) {}
-});
-$('#annotSave').addEventListener('click', () => { saveAnnot($('#annotColors .on') ? $('#annotColors .on').dataset.c : 'yellow'); toast('저장했어요'); closeAnnot(); });
-$('#annotClose').addEventListener('click', closeAnnot);
-$('#annotCopy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(annot.text); toast('복사했어요'); } catch (e) { toast('복사할 수 없어요'); }
-});
-$('#annotDelete').addEventListener('click', () => {
-  if (!annot || !annot.hl) return;
-  try { rendition.annotations.remove(annot.hl.cfiRange, 'highlight'); } catch (e) {}
-  cur.state.highlights = cur.state.highlights.filter(h => h !== annot.hl);
-  saveState(); renderNotes(); closeAnnot(); toast('삭제했어요');
-});
-function renderNotes() {
-  const box = $('#noteList'); const list = [...cur.state.highlights].sort((a, b) => (a.pct || 0) - (b.pct || 0));
-  if (!list.length) { box.innerHTML = '<div class="none">하이라이트·메모가 없어요<br>글자를 길게 눌러 선택하면 표시할 수 있어요</div>'; return; }
-  box.innerHTML = '';
-  list.forEach(h => {
-    const d = document.createElement('div'); d.className = 'note-card'; d.style.setProperty('--c', HL_COLORS[h.color]);
-    d.innerHTML = '<small>' + esc(h.label || '') + ' · ' + ((h.pct || 0) * 100).toFixed(1) + '%</small><div class="q">' + esc(h.text) + '</div>' + (h.note ? '<div class="n">' + esc(h.note) + '</div>' : '') +
-      '<div class="row-actions"><button class="btn ghost small">편집</button></div>';
-    $('.q', d).onclick = () => { rendition.display(h.cfiRange); closeDrawer(); };
-    $('.btn', d).onclick = () => openAnnotFor(h);
-    box.appendChild(d);
-  });
-}
-$('#btnExportNotes').addEventListener('click', () => {
-  const list = [...cur.state.highlights].sort((a, b) => (a.pct || 0) - (b.pct || 0));
-  if (!list.length && !cur.state.bookmarks.length) { toast('내보낼 내용이 없어요'); return; }
-  let md = '# ' + cur.meta.title + '\n' + (cur.meta.author ? '_' + cur.meta.author + '_\n' : '') + '\n';
-  if (list.length) md += '## 하이라이트·메모\n\n' + list.map(h => '> ' + h.text.replace(/\n+/g, ' ') + '\n' + (h.note ? '\n' + h.note + '\n' : '') + '\n— ' + (h.label || '') + ' (' + ((h.pct || 0) * 100).toFixed(0) + '%)\n').join('\n') + '\n';
-  if (cur.state.bookmarks.length) md += '## 북마크\n\n' + cur.state.bookmarks.map(b => '- ' + (b.label || '') + ' (' + ((b.pct || 0) * 100).toFixed(0) + '%) ' + (b.text || '')).join('\n') + '\n';
-  download((cur.meta.title || 'notes').replace(/[\\/:*?"<>|]/g, '_') + '-메모.md', md, 'text/markdown');
-});
-
 /* 검색 */
 let searchToken = 0;
 $('#searchForm').addEventListener('submit', async e => {
@@ -806,7 +718,7 @@ function clearSearchMark() { if (searchMark) { try { rendition.annotations.remov
 
 /* 드로어 */
 function openDrawer(tab) {
-  $('#settings').hidden = true; closeAnnot();
+  $('#settings').hidden = true;
   $('#drawer').hidden = false; $('#scrim').hidden = false; setTab(tab || 'toc');
   if ((tab || 'toc') === 'toc') { const c = $('#tab-toc .cur'); if (c) c.scrollIntoView({ block: 'center' }); }
   if (tab === 'search') setTimeout(() => $('#searchInput').focus(), 50);
@@ -814,7 +726,7 @@ function openDrawer(tab) {
 function closeDrawer() { $('#drawer').hidden = true; $('#scrim').hidden = true; }
 function setTab(t) {
   $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-  ['toc', 'search', 'marks', 'notes'].forEach(n => ($('#tab-' + n).hidden = n !== t));
+  ['toc', 'search', 'marks'].forEach(n => ($('#tab-' + n).hidden = n !== t));
 }
 $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 $('#drawerClose').addEventListener('click', closeDrawer);
@@ -825,13 +737,8 @@ function syncSettingsUI() {
   $('#fsVal').textContent = S.size + 'px'; $('#lhVal').textContent = S.lh.toFixed(1);
   $$('#settings .seg').forEach(seg => $$('button', seg).forEach(b => b.classList.toggle('on', S[seg.dataset.key] === b.dataset.v)));
 }
-function setSelMode(on) {
-  document.body.classList.toggle('selmode', on);
-  $('#menuSelect').lastChild.textContent = on ? '글자 선택 모드 끄기' : '글자 선택 모드 켜기';
-  if (on) { setChrome(false); toast('선택 모드: 글자를 길게 눌러 하이라이트하세요. 화면 가운데 탭은 잠시 꺼져요. (메뉴에서 끄기)', 4500); }
-}
-function toggleSettings() { closeDrawer(); closeAnnot(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
-$('#menuBtn').addEventListener('click', e => { e.stopPropagation(); const m = $('#menu'); const show = m.hidden; closeOverlays(); m.hidden = !show; });
+function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
+$('#btnMenu').addEventListener('click', e => { e.stopPropagation(); const m = $('#menu'); const show = m.hidden; closeOverlays(); m.hidden = !show; });
 $('#menu').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   $('#menu').hidden = true;
@@ -839,11 +746,8 @@ $('#menu').addEventListener('click', e => {
     case 'toc': openDrawer('toc'); break;
     case 'search': openDrawer('search'); break;
     case 'marks': openDrawer('marks'); break;
-    case 'notes': openDrawer('notes'); break;
     case 'settings': toggleSettings(); break;
     case 'bookmark': $('#btnBookmark').click(); break;
-    case 'select': setSelMode(!document.body.classList.contains('selmode')); break;
-    case 'back': closeBook(); break;
   }
 });
 $$('[data-close]').forEach(b => b.addEventListener('click', () => ($('#' + b.dataset.close).hidden = true)));
@@ -863,7 +767,6 @@ function changed(key) {
   applyStyles();
   // 글자 크기/줄간격이 바뀌면 같은 위치를 유지
   if (loc && (key === undefined)) rendition.display(cur.state.cfi);
-  if (key === 'theme') cur.state.highlights.forEach(addHighlightToView);
 }
 async function rebuildRendition() {
   if (!cur) return;
@@ -878,7 +781,6 @@ async function rebuildRendition() {
 /* 책 닫기 */
 function closeBook() {
   saveState.flush();
-  setSelMode(false);
   closeOverlays();
   try { rendition && rendition.destroy(); } catch (e) {}
   try { book && book.destroy(); } catch (e) {}
