@@ -448,6 +448,24 @@ function handleTap(x, target) {
   else toggleChrome();
 }
 
+
+/* 가장자리 탭/스와이프 (바깥 문서에서 처리) */
+function setupZone(el, dir) {
+  let sx = 0, sy = 0, st = 0, id = null;
+  el.addEventListener('pointerdown', e => { id = e.pointerId; sx = e.clientX; sy = e.clientY; st = Date.now(); });
+  el.addEventListener('pointercancel', () => { id = null; });
+  el.addEventListener('pointerup', e => {
+    if (e.pointerId !== id) return; id = null;
+    const dx = e.clientX - sx, dy = e.clientY - sy, dt = Date.now() - st;
+    if (closeOverlaysExceptDrawer()) return;
+    if (!$('#drawer').hidden) return;
+    if (Math.abs(dx) < 14 && Math.abs(dy) < 14 && dt < 600) { dir > 0 ? goNext() : goPrev(); return; }
+    if (S.flow === 'paged' && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { dx < 0 ? goNext() : goPrev(); }
+  });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+setupZone($('#tapL'), -1); setupZone($('#tapR'), +1);
+
 function scrollEl() { return rendition && rendition.manager && rendition.manager.container; }
 function goNext() {
   if (!rendition) return;

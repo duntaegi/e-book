@@ -151,3 +151,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .menu button{display:flex;align-items:center;gap:12px;border:0;background:transparent;text-align:left;padding:13px 14px;border-radius:10px;font-size:17px;min-height:48px}
 .menu button span{width:26px;text-align:center;font-size:18px}
 .menu button:active{background:var(--panel)}
+
+/* 가장자리 탭 영역: 책 본문(iframe)과 별개로 바깥 문서에서 터치를 받아 아이패드에서도 확실히 넘어가게 함 */
+.tapzone{position:absolute;top:0;bottom:0;width:15%;z-index:10;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.tapzone.left{left:0}.tapzone.right{right:0}
