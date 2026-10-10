@@ -63,7 +63,6 @@
     <button data-act="bookmark" id="menuBookmark"><span>🔖</span>이 쪽 북마크</button>
     <button data-act="marks"><span>⭐</span>북마크 목록</button>
     <button data-act="settings"><span>Aa</span>보기 설정</button>
-    <button data-act="fullscreen" id="menuFull"><span>⛶</span>전체 화면 켜기</button>
   </nav>
 
   <footer id="bottombar" class="chrome bottom">
@@ -118,8 +117,11 @@
     <div class="seg" data-key="flow"><button data-v="paged">페이지 넘김</button><button data-v="scroll">스크롤</button></div></div>
   <div class="set-row"><span>화면 나누기</span>
     <div class="seg" data-key="spread"><button data-v="auto">가로면 2쪽</button><button data-v="none">항상 1쪽</button></div></div>
+  <div class="set-row"><span>진행 표시</span>
+    <div class="seg" data-key="progress"><button data-v="percent">퍼센트</button><button data-v="page">쪽수(예상)</button></div></div>
   <div class="set-row"><span>정렬</span>
     <div class="seg" data-key="align"><button data-v="left">왼쪽</button><button data-v="justify">양쪽</button></div></div>
+  <div id="saveInfo" class="muted small" style="padding-top:8px"></div>
 </section>
 
 <!-- 확인 대화상자 / 토스트 -->
