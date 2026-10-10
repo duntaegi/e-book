@@ -352,7 +352,7 @@ function writeLocalPos(c) {
   try {
     const prev = readLocalPos(c.id);
     if (prev && (prev.t || 0) > (c.state.posUpdated || 0)) return; // 더 최근 기록이 있으면 덮어쓰지 않음
-    localStorage.setItem(lsKey(c.id), JSON.stringify({ cfi: c.state.cfi, pct: c.state.percentage, t: c.state.posUpdated }));
+    localStorage.setItem(lsKey(c.id), JSON.stringify({ cfi: c.state.cfi, pct: c.state.percentage, t: c.state.posUpdated, pos: c.state.pos }));
   } catch (e) {}
 }
 function readLocalPos(id) {
@@ -367,7 +367,7 @@ const saveState = debounce(async () => {
     const merged = { ...c.state };
     if (old && (old.posUpdated || 0) > (c.state.posUpdated || 0) && old.cfi) {
       // 다른 창에서 더 최근에 읽은 기록이 있으면 위치는 덮어쓰지 않음
-      merged.cfi = old.cfi; merged.percentage = old.percentage; merged.posUpdated = old.posUpdated;
+      merged.cfi = old.cfi; merged.percentage = old.percentage; merged.posUpdated = old.posUpdated; merged.pos = old.pos;
     }
     await DB.put('state', merged);
     const m = await DB.get('meta', c.id);
@@ -387,12 +387,12 @@ async function openBook(id) {
   setView('reader'); $('#loading').hidden = false;
   cur = { id, meta, state: { id, cfi: null, percentage: 0, bookmarks: [], highlights: [], posUpdated: 0, ...(st || {}) } };
   const lp = readLocalPos(id);
-  if (lp && lp.cfi && (lp.t || 0) > (cur.state.posUpdated || 0)) { cur.state.cfi = lp.cfi; cur.state.percentage = lp.pct || 0; cur.state.posUpdated = lp.t; }
+  if (lp && lp.cfi && (lp.t || 0) > (cur.state.posUpdated || 0)) { cur.state.cfi = lp.cfi; cur.state.percentage = lp.pct || 0; cur.state.posUpdated = lp.t; cur.state.pos = lp.pos || cur.state.pos; }
   $('#bookTitle').textContent = meta.title;
   loc = null; tocFlat = []; W = null;
   $('#slider').disabled = true; $('#slider').value = 0;
   try {
-    await initEngine(file.data, cur.state.cfi);
+    await initEngine(file.data, cur.state.cfi, cur.state.pos);
     renderMarks();
     $('#loading').hidden = true;
     setTimeout(() => setChrome(false), 1800);
@@ -403,16 +403,15 @@ async function openBook(id) {
 
 
 /* epub.js 엔진 시작 (책 열기 / 보기 방식 변경 시 공통) */
-async function initEngine(data, cfi) {
+async function initEngine(data, cfi, pos) {
   book = ePub(data.slice(0));
   cfiTool = new ePub.CFI();
   W = null;
   createRendition();
   await book.ready;
   buildToc();
-  await rendition.display(cfi || undefined);
-  applyStyles();
   buildWeights();
+  await goToPlace(pos, cfi);
   refreshProgress();
   $('#slider').disabled = false;
 }
@@ -427,6 +426,7 @@ function createRendition() {
     allowScriptedContent: false,
   });
   rendition.on('relocated', onRelocated);
+  rendition.on('resized', () => { if (cur && cur.state.pos) pendingFix = { pos: { ...cur.state.pos }, t: Date.now() }; });
   rendition.hooks.content.register(setupContent);
   rendition.on('rendered', () => { /* 새 섹션 렌더 */ });
   applyStyles();
@@ -599,6 +599,70 @@ function chapterFor(cfiLoc) {
   return best;
 }
 
+
+/* ===== 위치 저장/복원: 글자 주소(CFI) 대신 "몇 번째 구간의 몇 % 지점"으로 =====
+   아이패드 Safari에서는 긴 문단이 있으면 CFI가 문단 맨 앞으로 잡혀서, 다시 열 때 앞쪽으로 돌아갈 수 있어요.
+   그래서 쪽 번호/전체 쪽수 비율(frac)을 따로 저장하고, 복원은 그 비율로 해요. */
+function posFromLocation(l) {
+  if (!l || !l.start) return null;
+  const idx = l.start.index;
+  let frac = 0;
+  if (S.flow === 'scroll') {
+    const c = scrollEl();
+    if (c && c.scrollHeight > c.clientHeight) frac = c.scrollTop / (c.scrollHeight - c.clientHeight);
+  } else if (l.start.displayed && l.start.displayed.total) {
+    frac = (l.start.displayed.page - 1) / l.start.displayed.total;
+  }
+  return { index: idx, frac: Math.max(0, Math.min(1, frac)) };
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* 글자 크기/글꼴이 적용되며 쪽 수가 바뀌는 중에는 위치 계산이 틀어지므로, 레이아웃이 안정될 때까지 기다림 */
+async function waitStable(maxMs = 6000) {
+  const m = rendition && rendition.manager; if (!m || !m.container) return;
+  const get = () => (S.flow === 'scroll' ? m.container.scrollHeight : m.container.scrollWidth);
+  let last = get(), same = 0; const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    await sleep(120);
+    if (!rendition) return;
+    const v = get();
+    if (v === last) { if (++same >= 3) return; } else { same = 0; last = v; }
+  }
+}
+async function jumpToPos(pos) {
+  if (!rendition || !book || !pos) return false;
+  const item = book.spine.get(pos.index);
+  if (!item) return false;
+  await rendition.display(item.href);
+  if (pos.frac > 0) {
+    let lastSize = -1;
+    for (let k = 0; k < 5; k++) {
+      await waitStable();
+      const m = rendition && rendition.manager; if (!m) return true;
+      if (S.flow === 'scroll') {
+        const c = m.container; c.scrollTop = pos.frac * Math.max(0, c.scrollHeight - c.clientHeight);
+        if (c.scrollHeight === lastSize) break; lastSize = c.scrollHeight;
+      } else {
+        const sw = m.container.scrollWidth;
+        const pages = Math.max(1, m.layout.count(sw).pages);
+        const p = Math.min(pages - 1, Math.floor(pos.frac * pages));
+        m.moveTo({ left: p * m.layout.pageWidth, top: 0 });
+        if (sw === lastSize) break; lastSize = sw;
+      }
+      await sleep(300);
+    }
+    rendition && rendition.reportLocation();
+  }
+  return true;
+}
+async function goToPlace(pos, cfi) {
+  try {
+    if (pos && await jumpToPos(pos)) { saveInfo.restore = '쪽 비율 복원 (구간 ' + (pos.index + 1) + ', ' + (pos.frac * 100).toFixed(1) + '%)'; return; }
+  } catch (e) { console.warn('jumpToPos failed', e); }
+  await rendition.display(cfi || undefined);
+  saveInfo.restore = cfi ? '글자 주소로 복원' : '처음부터';
+  try { await waitStable(); rendition && rendition.reportLocation(); } catch (e) {}
+}
+
 /* 책 전체 진행도: 챕터(파일) 크기를 가중치로 계산 — 책이 커도 즉시 계산됨 */
 function buildWeights() {
   const items = book.spine.spineItems;
@@ -627,7 +691,8 @@ function calcPct(l) {
 }
 
 /* 쪽수 표시(예상): 현재 챕터의 쪽수와 파일 크기로 책 전체 쪽수를 추정 */
-let bpp = 0; // 한 쪽당 파일 바이트 수 추정값
+let layoutKey = '', seenPages = new Map();
+function layoutKeyNow() { return [S.size, S.lh, S.font, S.flow, S.spread, innerWidth, innerHeight].join('|'); }
 function sectionPages() {
   if (!loc) return null;
   if (S.flow === 'scroll') {
@@ -639,20 +704,29 @@ function sectionPages() {
 }
 function progressText(pct) {
   if (S.progress !== 'page' || !W || !loc) return (pct * 100).toFixed(1) + '%';
+  const key = layoutKeyNow(); if (key !== layoutKey) { layoutKey = key; seenPages = new Map(); }
   const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
-  if (sp && sp.total >= 3) { const v = W.sizes[idx] / sp.total; bpp = bpp ? bpp * 0.6 + v * 0.4 : v; }
-  else if (!bpp && sp) bpp = W.sizes[idx] / Math.max(1, sp.total);
-  if (!bpp) return (pct * 100).toFixed(1) + '%';
+  if (sp) seenPages.set(idx, sp.total);
+  let bytes = 0, pages = 0; seenPages.forEach((t, i) => { bytes += W.sizes[i]; pages += t; });
+  if (!pages) return (pct * 100).toFixed(1) + '%';
+  const bpp = bytes / pages;
   const total = Math.max(1, Math.round(W.total / bpp));
   const page = Math.min(total, Math.max(1, Math.round(W.cum[idx] / bpp + (sp ? sp.page : 1))));
-  return page.toLocaleString() + ' / ' + total.toLocaleString() + '쪽';
+  return page + '/' + total;
 }
+let pendingFix = null;
 function onRelocated(l) {
   if (!cur) return;
   loc = l;
   const cfi = l.start.cfi;
   const pct = calcPct(l);
-  cur.state.cfi = cfi; cur.state.percentage = pct; cur.state.posUpdated = Date.now(); writeLocalPos(cur); saveState();
+  const pos = posFromLocation(l);
+  // 화면 크기가 바뀐 직후(회전/잠금 해제 등)에 책 엔진이 옛 글자 주소로 되돌려 놓았다면, 직전 위치로 다시 맞춤
+  if (pendingFix && Date.now() - pendingFix.t < 1500) {
+    const fx = pendingFix; pendingFix = null;
+    if (!(pos && fx.pos && pos.index === fx.pos.index && Math.abs(pos.frac - fx.pos.frac) < 0.002)) { jumpToPos(fx.pos).catch(() => {}); return; }
+  }
+  cur.state.cfi = cfi; cur.state.percentage = pct; cur.state.pos = pos; cur.state.posUpdated = Date.now(); writeLocalPos(cur); saveState();
   refreshProgress();
   updateBookmarkButton();
   highlightToc();
@@ -697,8 +771,15 @@ function highlightToc() {
 
 /* 북마크 */
 function bookmarkIn(l) {
-  if (!l) return [];
+  if (!l || !cur) return [];
+  const sIdx = l.start.index, eIdx = l.end ? l.end.index : sIdx;
+  const sd = l.start.displayed, ed = (l.end && l.end.displayed) || sd;
   return cur.state.bookmarks.filter(b => {
+    if (b.pos && sd && sd.total) {
+      const f0 = (sd.page - 1) / sd.total;
+      const f1 = (eIdx === sIdx && ed && ed.total) ? ed.page / ed.total : 1;
+      return b.pos.index === sIdx && b.pos.frac >= f0 - 1e-6 && b.pos.frac < f1 - 1e-9;
+    }
     try { return cfiTool.compare(b.cfi, l.start.cfi) >= 0 && cfiTool.compare(b.cfi, l.end.cfi) <= 0; } catch (e) { return false; }
   });
 }
@@ -715,7 +796,7 @@ $('#btnBookmark').addEventListener('click', () => {
     const ch = chapterFor(loc);
     let text = '';
     try { text = (rendition.getRange(loc.start.cfi).toString() || '').trim(); } catch (e) {}
-    cur.state.bookmarks.push({ id: uid(), cfi: loc.start.cfi, label: ch ? ch.label : '', pct: cur.state.percentage, text: text.slice(0, 60), created: Date.now() });
+    cur.state.bookmarks.push({ id: uid(), cfi: loc.start.cfi, pos: posFromLocation(loc), label: ch ? ch.label : '', pct: cur.state.percentage, text: text.slice(0, 60), created: Date.now() });
     toast('북마크를 추가했어요');
   }
   saveState(); updateBookmarkButton(); renderMarks();
@@ -727,7 +808,7 @@ function renderMarks() {
   list.forEach(b => {
     const w = document.createElement('div'); w.className = 'mark-wrap mark-row';
     w.innerHTML = '<button class="mark"><small>' + esc(b.label || '') + ' · ' + ((b.pct || 0) * 100).toFixed(1) + '%</small>' + esc(b.text || '(위치)') + '</button><button class="icon small" aria-label="삭제">🗑</button>';
-    $('.mark', w).onclick = () => { rendition.display(b.cfi); closeDrawer(); };
+    $('.mark', w).onclick = () => { goToPlace(b.pos, b.cfi); closeDrawer(); };
     $('.icon', w).onclick = () => { cur.state.bookmarks = cur.state.bookmarks.filter(x => x !== b); saveState(); renderMarks(); updateBookmarkButton(); };
     box.appendChild(w);
   });
@@ -792,7 +873,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')');
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '');
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
@@ -825,16 +906,16 @@ function changed(key) {
   if (key === 'flow' || key === 'spread') { rebuildRendition(); return; }
   applyStyles();
   // 글자 크기/줄간격이 바뀌면 같은 위치를 유지
-  if (loc && (key === undefined)) rendition.display(cur.state.cfi);
+  if (loc && (key === undefined)) goToPlace(cur.state.pos, cur.state.cfi);
 }
 async function rebuildRendition() {
   if (!cur) return;
-  const cfi = cur.state.cfi;
+  const cfi = cur.state.cfi, pos = cur.state.pos;
   const file = await DB.get('files', cur.id);
   try { rendition.destroy(); } catch (e) {}
   try { book.destroy(); } catch (e) {}
   $('#viewer').innerHTML = '';
-  await initEngine(file.data, cfi);
+  await initEngine(file.data, cfi, pos);
 }
 
 /* 책 닫기 */
