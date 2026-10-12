@@ -691,7 +691,20 @@ function calcPct(l) {
 }
 
 /* 쪽수 표시(예상): 현재 챕터의 쪽수와 파일 크기로 책 전체 쪽수를 추정 */
-let layoutKey = '', seenPages = new Map();
+let layoutKey = '', seenPages = new Map(), lastBpp = 0;
+/* 북마크 등에 쓰는 위치 라벨: 보기 설정(퍼센트/페이지)에 맞춰서 */
+function placeLabel(item) {
+  const pct = item.pct || 0;
+  if (S.progress === 'page' && W && lastBpp) {
+    const total = Math.max(1, Math.round(W.total / lastBpp));
+    let page;
+    if (item.pos && W.sizes[item.pos.index] != null) page = W.cum[item.pos.index] / lastBpp + item.pos.frac * W.sizes[item.pos.index] / lastBpp + 1;
+    else page = pct * total;
+    page = Math.min(total, Math.max(1, Math.round(page)));
+    return page + '/' + total;
+  }
+  return (pct * 100).toFixed(1) + '%';
+}
 function layoutKeyNow() { return [S.size, S.lh, S.font, S.flow, S.spread, innerWidth, innerHeight].join('|'); }
 function sectionPages() {
   if (!loc) return null;
@@ -709,7 +722,7 @@ function progressText(pct) {
   if (sp) seenPages.set(idx, sp.total);
   let bytes = 0, pages = 0; seenPages.forEach((t, i) => { bytes += W.sizes[i]; pages += t; });
   if (!pages) return (pct * 100).toFixed(1) + '%';
-  const bpp = bytes / pages;
+  const bpp = bytes / pages; lastBpp = bpp;
   const total = Math.max(1, Math.round(W.total / bpp));
   const page = Math.min(total, Math.max(1, Math.round(W.cum[idx] / bpp + (sp ? sp.page : 1))));
   return page + '/' + total;
@@ -807,7 +820,7 @@ function renderMarks() {
   box.innerHTML = '';
   list.forEach(b => {
     const w = document.createElement('div'); w.className = 'mark-wrap mark-row';
-    w.innerHTML = '<button class="mark"><small>' + esc(b.label || '') + ' · ' + ((b.pct || 0) * 100).toFixed(1) + '%</small>' + esc(b.text || '(위치)') + '</button><button class="icon small" aria-label="삭제">🗑</button>';
+    w.innerHTML = '<button class="mark"><small>' + esc(b.label || '') + ' · ' + placeLabel(b) + '</small>' + esc(b.text || '(위치)') + '</button><button class="icon small" aria-label="삭제">🗑</button>';
     $('.mark', w).onclick = () => { goToPlace(b.pos, b.cfi); closeDrawer(); };
     $('.icon', w).onclick = () => { cur.state.bookmarks = cur.state.bookmarks.filter(x => x !== b); saveState(); renderMarks(); updateBookmarkButton(); };
     box.appendChild(w);
@@ -852,6 +865,7 @@ function clearSearchMark() { if (searchMark) { try { rendition.annotations.remov
 
 /* 드로어 */
 function openDrawer(tab) {
+  if (cur) renderMarks();
   $('#settings').hidden = true;
   $('#drawer').hidden = false; $('#scrim').hidden = false; setTab(tab || 'toc');
   if ((tab || 'toc') === 'toc') { const c = $('#tab-toc .cur'); if (c) c.scrollIntoView({ block: 'center' }); }
@@ -902,7 +916,7 @@ $$('#settings .seg').forEach(seg => seg.addEventListener('click', e => {
 function changed(key) {
   saveSettings(); syncSettingsUI(); applyChromeTheme();
   if (!rendition) return;
-  if (key === 'progress') { refreshProgress(); return; }
+  if (key === 'progress') { refreshProgress(); renderMarks(); return; }
   if (key === 'flow' || key === 'spread') { rebuildRendition(); return; }
   applyStyles();
   // 글자 크기/줄간격이 바뀌면 같은 위치를 유지
