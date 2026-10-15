@@ -19,7 +19,8 @@ const fmt = sec => {
 const fmtS = sec => { const m = Math.round(sec / 60); return m < 60 ? m + '분' : (m / 60).toFixed(1) + '시간'; };
 const hm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
 
-let host = { load: async () => [], show() {}, hide() {} };
+const SHORT = 60;
+let host = { load: async () => [], show() {}, hide() {}, remove: async () => {}, ask: async () => true };
 let LOG = [];
 let byDay = new Map();
 let st = { mode: 'day', date: new Date() };
@@ -92,8 +93,12 @@ function sessionList(ss) {
     let pg;
     if (s.pf != null && s.pt != null) pg = s.pf + ' → ' + s.pt + '쪽 <span class="muted">(' + (s.rp || 0) + '쪽 읽음)</span>';
     else pg = Math.round((s.c0 || 0) * 1000) / 10 + '% → ' + Math.round((s.c1 || 0) * 1000) / 10 + '%';
-    return '<div class="srow"><div class="stime">' + hm(s.st) + ' – ' + hm(s.en) + '</div><div class="sbody"><div class="bt">' + esc(s.title) + '</div><div class="bm">' + pg + '</div></div><div class="sdur">' + fmt(s.sec) + '</div></div>';
+    return '<div class="srow"><div class="stime">' + hm(s.st) + ' – ' + hm(s.en) + '</div><div class="sbody"><div class="bt">' + esc(s.title) + '</div><div class="bm">' + pg + '</div></div><div class="sdur">' + fmt(s.sec) + '</div><button class="sdel" data-del="' + esc(s.sid) + '" aria-label="이 기록 지우기">×</button></div>';
   }).join('');
+}
+function cleanBtn() {
+  const n = LOG.filter(s => (s.sec || 0) < SHORT).length;
+  return n ? '<div class="st-clean"><button class="btn small ghost" data-clean="1">1분 미만 기록 ' + n + '개 한 번에 지우기</button></div>' : '';
 }
 function render() {
   const el = $('#stats'); if (!el) return;
@@ -135,12 +140,14 @@ function render() {
     '<div class="st-tiles"><div><span>읽은 시간</span><b>' + fmt(tot) + '</b></div><div><span>읽은 쪽수</span><b>' + pages + '쪽</b></div><div><span>' + t3[0] + '</span><b>' + t3[1] + '</b></div></div>' +
     avg + '<div class="st-chart">' + chart + '</div>' +
     (list || (ss.length ? '' : '<p class="muted st-none">이 기간에는 읽은 기록이 없어요.</p>')) +
-    '<p class="muted small st-note">쪽수는 글자 크기·화면에 따라 달라지는 추정값이에요.</p></div>';
+    cleanBtn() + '<p class="muted small st-note">쪽수는 글자 크기·화면에 따라 달라지는 추정값이에요.</p></div>';
 }
 function bindStats() {
   const el = $('#stats'); if (!el) return;
   el.addEventListener('click', e => {
     const t = e.target.closest('button, [data-go]'); if (!t || t.disabled) return;
+    if (t.dataset.del) { removeRecs([t.dataset.del], '이 읽은 기록을 지울까요?'); return; }
+    if (t.dataset.clean) { const ids = LOG.filter(s => (s.sec || 0) < SHORT).map(s => s.sid); removeRecs(ids, '1분 미만의 짧은 기록 ' + ids.length + '개를 모두 지울까요?'); return; }
     if (t.dataset.act === 'back') { host.hide(); return; }
     if (t.dataset.mode) { st.mode = t.dataset.mode; render(); return; }
     if (t.dataset.nav) {
@@ -155,6 +162,10 @@ function bindStats() {
   });
 }
 
+async function removeRecs(ids, msg) {
+  if (!ids.length || !(await host.ask(msg + '\n(지운 기록은 되돌릴 수 없어요)', '지우기'))) return;
+  await host.remove(ids); await refresh(); const y = $('#stats').scrollTop; render(); $('#stats').scrollTop = y;
+}
 async function refresh() { try { LOG = (await host.load()) || []; } catch (e) { LOG = []; } index(); }
 async function open(date, mode) { await refresh(); st = { mode: mode || 'month', date: date || new Date() }; render(); host.show(); $('#stats').scrollTop = 0; }
 async function update() { await refresh(); }

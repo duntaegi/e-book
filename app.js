@@ -975,7 +975,7 @@ addEventListener('beforeunload', () => { if (cur) saveState.flush(); });
    - 책이 열려 있고 화면이 켜져 있으며 최근 3분 안에 손길(터치/쪽 넘김)이 있을 때만 시간이 올라가요
    - 기록은 'state' 저장소의 'readlog' 항목 하나에 모아 저장 (백업 파일에도 함께 들어가요)
    ===================================================== */
-const IDLE_MS = 3 * 60 * 1000, AWAY_MS = 10 * 60 * 1000;
+const MIN_MS = 60 * 1000, IDLE_MS = 3 * 60 * 1000, AWAY_MS = 10 * 60 * 1000;
 let sess = null, lastTick = 0, lastTouch = 0, lastPersist = 0, hiddenAt = 0, logQ = Promise.resolve();
 const sid = () => Math.random().toString(36).slice(2, 10);
 function pageNow(pct, tp) { return tp ? Math.min(tp, Math.max(1, Math.round(pct * tp) + 1)) : null; }
@@ -996,7 +996,7 @@ function commitRec(rec) {
   return logQ;
 }
 function persistSess(commit) {
-  if (!sess || sess.ms < 5000) return Promise.resolve();
+  if (!sess || sess.ms < MIN_MS) return Promise.resolve();
   const rec = sessRecord();
   try { localStorage.setItem('rl.active', JSON.stringify(rec)); } catch (e) {}
   return commit ? commitRec(rec) : Promise.resolve();
@@ -1010,7 +1010,7 @@ function startSession() {
 async function endSession() {
   if (!sess) return;
   const s = sess;
-  if (s.ms >= 5000) { await persistSess(true); try { localStorage.removeItem('rl.active'); } catch (e) {} }
+  if (s.ms >= MIN_MS) { await persistSess(true); try { localStorage.removeItem('rl.active'); } catch (e) {} }
   else { try { localStorage.removeItem('rl.active'); } catch (e) {} }
   if (sess === s) sess = null;
 }
@@ -1039,7 +1039,7 @@ setInterval(() => {
   if (!sess) return;
   if (!document.hidden && !$('#reader').hidden && now - lastTouch < IDLE_MS) sess.ms += dt;
   paintTimer();
-  if (now - lastPersist > 15000 && sess.ms >= 5000) { lastPersist = now; persistSess(true); }
+  if (now - lastPersist > 15000 && sess.ms >= MIN_MS) { lastPersist = now; persistSess(true); }
 }, 1000);
 ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { lastTouch = Date.now(); }, true));
 document.addEventListener('visibilitychange', () => {
@@ -1052,13 +1052,18 @@ async function recoverActive() {
   try {
     const raw = localStorage.getItem('rl.active'); if (!raw) return;
     localStorage.removeItem('rl.active');
-    const rec = JSON.parse(raw); if (rec && rec.sid && rec.sec >= 5) await commitRec(rec);
+    const rec = JSON.parse(raw); if (rec && rec.sid && rec.sec >= 60) await commitRec(rec);
   } catch (e) {}
 }
 Stats.init({
   load: async () => ((await DB.get('state', 'readlog')) || { sessions: [] }).sessions,
   show: () => setView('stats'),
-  hide: () => setView('library'),
+  hide: () => { setView('library'); renderShelf(); },
+  ask,
+  remove: ids => { logQ = logQ.then(async () => {
+    const o = (await DB.get('state', 'readlog')) || { id: 'readlog', sessions: [] };
+    const gone = new Set(ids); o.sessions = o.sessions.filter(x => !gone.has(x.sid)); await DB.put('state', o);
+  }).catch(() => {}); return logQ; },
 });
 
 /* 시작 */
