@@ -714,9 +714,9 @@ let layoutKey = '', seenPages = new Map(), lastBpp = 0;
 function placeLabel(item) {
   const pct = item.pct || 0;
   if (S.progress === 'page' && W && lastBpp) {
-    const total = Math.max(1, Math.round(W.total / lastBpp));
+    const total = Math.max(1, Math.round(totalPages()));
     let page;
-    if (item.pos && W.sizes[item.pos.index] != null) page = W.cum[item.pos.index] / lastBpp + item.pos.frac * W.sizes[item.pos.index] / lastBpp + 1;
+    if (item.pos && W.sizes[item.pos.index] != null) page = pagesBefore(item.pos.index) + item.pos.frac * pagesOf(item.pos.index) + 1;
     else page = pct * total;
     page = Math.min(total, Math.max(1, Math.round(page)));
     return page + '/' + total;
@@ -733,21 +733,30 @@ function sectionPages() {
   const d = loc.start.displayed; if (!d || !d.total) return null;
   return { total: d.total, page: d.page };
 }
+/* 쪽수 추정: 이미 본 구간은 실제 쪽수, 아직 안 본 구간은 "쪽당 글자량"으로 추정
+   (표지·삽화처럼 아주 작은 구간은 쪽당 글자량 계산에서 제외 → 쪽수가 갑자기 튀지 않게) */
+const MIN_BYTES_FOR_BPP = 3000, DEFAULT_BPP = 2500;
 function updateBpp() {
-  if (!W || !loc) return 0;
+  if (!W) return 0;
   const key = layoutKeyNow(); if (key !== layoutKey) { layoutKey = key; seenPages = new Map(); }
-  const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
-  if (sp) seenPages.set(idx, sp.total);
-  let bytes = 0, pages = 0; seenPages.forEach((t, i) => { bytes += W.sizes[i]; pages += t; });
-  if (!pages) return 0;
-  lastBpp = bytes / pages; return lastBpp;
+  if (loc) {
+    const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
+    if (sp) seenPages.set(idx, sp.total);
+  }
+  let bytes = 0, pages = 0, bytesAll = 0, pagesAll = 0;
+  seenPages.forEach((t, i) => { bytesAll += W.sizes[i]; pagesAll += t; if (W.sizes[i] >= MIN_BYTES_FOR_BPP) { bytes += W.sizes[i]; pages += t; } });
+  let bpp = pages ? bytes / pages : pagesAll ? bytesAll / pagesAll : DEFAULT_BPP;
+  lastBpp = Math.min(9000, Math.max(600, bpp)); return lastBpp;
 }
+function pagesOf(i) { return seenPages.has(i) ? seenPages.get(i) : Math.max(1, W.sizes[i] / lastBpp); }
+function pagesBefore(idx) { let s = 0; for (let j = 0; j < idx; j++) s += pagesOf(j); return s; }
+function totalPages() { return pagesBefore(W.sizes.length); }
 function progressText(pct) {
   if (S.progress !== 'page' || !W || !loc) return (pct * 100).toFixed(1) + '%';
-  const bpp = updateBpp(); if (!bpp) return (pct * 100).toFixed(1) + '%';
+  updateBpp();
   const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
-  const total = Math.max(1, Math.round(W.total / bpp));
-  const page = Math.min(total, Math.max(1, Math.round(W.cum[idx] / bpp + (sp ? sp.page : 1))));
+  const total = Math.max(1, Math.round(totalPages()));
+  const page = Math.min(total, Math.max(1, Math.round(pagesBefore(idx) + (sp ? sp.page : 1))));
   return page + '/' + total;
 }
 let pendingFix = null;
@@ -912,7 +921,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 18';
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 19';
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
@@ -984,7 +993,7 @@ let sess = null, lastTick = 0, lastTouch = 0, lastPersist = 0, hiddenAt = 0, log
 const sid = () => Math.random().toString(36).slice(2, 10);
 function pageNow(pct, tp) { return tp ? Math.min(tp, Math.max(1, Math.round(pct * tp) + 1)) : null; }
 function sessRecord() {
-  const tp = (W && updateBpp() ? Math.max(1, Math.round(W.total / lastBpp)) : 0) || sess.tp || 0;
+  const tp = (W && updateBpp() ? Math.max(1, Math.round(totalPages())) : 0) || sess.tp || 0;
   return {
     sid: sess.sid, bid: sess.bid, title: sess.title, st: sess.st, en: Date.now(), sec: Math.floor(sess.ms / 1000),
     tp: tp || null, pf: pageNow(sess.c0, tp), pt: pageNow(sess.c1, tp), rp: Math.round(sess.rp), c0: sess.c0, c1: sess.c1,
@@ -1022,7 +1031,7 @@ function trackMove(pct) {
   lastTouch = Date.now();
   if (!sess) return;
   sess.c1 = pct;
-  const bpp = updateBpp(); const tp = bpp && W ? W.total / bpp : 0;
+  const bpp = updateBpp(); const tp = bpp && W ? totalPages() : 0;
   if (tp) sess.tp = Math.round(tp);
   if (sess.prev != null && tp) { const d = (pct - sess.prev) * tp; if (d > 0 && d <= 6) sess.rp += d; }
   sess.prev = pct;
