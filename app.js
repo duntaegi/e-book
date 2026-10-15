@@ -118,7 +118,9 @@ function applyChromeTheme() {
 const coverURLs = [];
 let editMode = false;
 const shelf0 = $('#shelf');
+let shelfGen = 0;
 async function renderShelf() {
+  const gen = ++shelfGen;
   const keep = $('#library').scrollTop;
   coverURLs.splice(0).forEach(u => URL.revokeObjectURL(u));
   const metas = await DB.all('meta');
@@ -165,6 +167,7 @@ async function renderShelf() {
     if (editMode) attachDrag(card, m);
     shelf.appendChild(card);
   }
+  if (gen !== shelfGen) return; // 더 최근에 시작한 그리기가 있으면 이번 결과는 버림
   shelf0.replaceChildren(shelf);
   $('#library').scrollTop = keep;
 }
@@ -909,7 +912,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '');
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 18';
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
