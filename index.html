@@ -42,6 +42,9 @@
   </div>
 </main>
 
+<!-- 독서 기록 -->
+<main id="stats" class="view" hidden></main>
+
 <!-- 리더 -->
 <main id="reader" class="view" hidden>
   <div id="viewer"></div>
@@ -72,7 +75,7 @@
       <input id="slider" type="range" min="0" max="1000" value="0">
       <button id="btnNext" class="icon small" aria-label="다음">›</button>
     </div>
-    <div id="progressLabel" class="progress">0%</div>
+    <div class="progress"><span id="progressLabel">0%</span> <span id="readTimer" class="timer"></span></div>
   </footer>
 
   <div id="loading" class="loading" hidden>불러오는 중…</div>
@@ -140,6 +143,7 @@
 
 <script src="lib/jszip.min.js"></script>
 <script src="lib/epub.min.js"></script>
+<script src="stats.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

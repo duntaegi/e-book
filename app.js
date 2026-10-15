@@ -129,6 +129,17 @@ async function renderShelf() {
   shelf0.classList.toggle('edit', editMode);
   const shelf = shelf0; shelf.innerHTML = '';
   $('#empty').hidden = metas.length > 0;
+  if (!editMode) {
+    let sm = null; try { await Stats.update(); sm = Stats.summary(); } catch (e) {}
+    const now = new Date(); let dots = '';
+    for (let n = 27; n >= 0; n--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - n); const k = sm ? sm.dkey(d.getTime()) : ''; dots += '<i class="' + (sm && sm.has(k) ? 'on ' : '') + (n === 0 ? 'td' : '') + '"></i>'; }
+    const today = sm ? sm.today : 0;
+    const cc = document.createElement('div'); cc.className = 'card calcard';
+    cc.innerHTML = '<div class="cover calcover"><div><div class="cc-k">독서 기록</div><div class="cc-m">' + (now.getMonth() + 1) + '월</div><div class="cc-t">오늘 ' + (sm ? sm.fmt(today) : '0분') + '</div></div><div class="cc-g">' + dots + '</div></div>' +
+      '<div class="t">캘린더</div><div class="a">일 · 주 · 월 · 연도별 기록</div>';
+    cc.addEventListener('click', () => Stats.open(new Date(), 'month'));
+    shelf.appendChild(cc);
+  }
   for (const [i, m] of metas.entries()) {
     const card = document.createElement('div'); card.className = 'card';
     let cover = '<div class="ph">' + esc(m.title) + '</div>';
@@ -208,7 +219,7 @@ function attachDrag(card, meta) {
     dragging = false; dragActive = false; if (ghost) { ghost.remove(); ghost = null; }
     card.classList.remove('ph-slot');
     if (commit) {
-      const ids = [...shelf0.children].map(c => c._id);
+      const ids = [...shelf0.children].filter(c => c._id).map(c => c._id);
       const metas = await DB.all('meta'); const byId = Object.fromEntries(metas.map(m => [m.id, m]));
       for (let i = 0; i < ids.length; i++) { const m = byId[ids[i]]; if (m && m.order !== i + 1) { m.order = i + 1; await DB.put('meta', m); } }
     }
@@ -321,7 +332,9 @@ $('#restoreInput').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
     const j = JSON.parse(await f.text()); let n = 0;
-    for (const s of j.states || []) { const cur = await DB.get('state', s.id); await DB.put('state', { ...(cur || {}), ...s, locations: cur && cur.locations }); n++; }
+    for (const s of j.states || []) {
+      if (s.id === 'readlog') { const o = (await DB.get('state', 'readlog')) || { id: 'readlog', sessions: [] }; const have = new Set(o.sessions.map(x => x.sid)); (s.sessions || []).forEach(x => { if (!have.has(x.sid)) o.sessions.push(x); }); await DB.put('state', o); continue; }
+      const cur = await DB.get('state', s.id); await DB.put('state', { ...(cur || {}), ...s, locations: cur && cur.locations }); n++; }
     if (j.settings) { S = { ...S, ...j.settings }; saveSettings(); applyChromeTheme(); }
     toast('복원했어요 (' + n + '권). 해당 책을 서재에 추가하면 반영돼요.'); renderShelf();
   } catch (err) { toast('백업 파일을 읽지 못했어요'); }
@@ -379,7 +392,7 @@ const saveState = debounce(async () => {
   }
 }, 300);
 
-function setView(name) { $('#library').hidden = name !== 'library'; $('#reader').hidden = name !== 'reader'; }
+function setView(name) { $('#library').hidden = name !== 'library'; $('#reader').hidden = name !== 'reader'; $('#stats').hidden = name !== 'stats'; }
 
 async function openBook(id) {
   const [meta, file, st] = await Promise.all([DB.get('meta', id), DB.get('files', id), DB.get('state', id)]);
@@ -395,6 +408,7 @@ async function openBook(id) {
     await initEngine(file.data, cur.state.cfi, cur.state.pos);
     renderMarks();
     $('#loading').hidden = true;
+    startSession();
     setTimeout(() => setChrome(false), 1800);
   } catch (e) {
     console.error(e); $('#loading').hidden = true; toast('책을 열 수 없어요: ' + (e.message || e)); closeBook();
@@ -715,14 +729,19 @@ function sectionPages() {
   const d = loc.start.displayed; if (!d || !d.total) return null;
   return { total: d.total, page: d.page };
 }
-function progressText(pct) {
-  if (S.progress !== 'page' || !W || !loc) return (pct * 100).toFixed(1) + '%';
+function updateBpp() {
+  if (!W || !loc) return 0;
   const key = layoutKeyNow(); if (key !== layoutKey) { layoutKey = key; seenPages = new Map(); }
   const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
   if (sp) seenPages.set(idx, sp.total);
   let bytes = 0, pages = 0; seenPages.forEach((t, i) => { bytes += W.sizes[i]; pages += t; });
-  if (!pages) return (pct * 100).toFixed(1) + '%';
-  const bpp = bytes / pages; lastBpp = bpp;
+  if (!pages) return 0;
+  lastBpp = bytes / pages; return lastBpp;
+}
+function progressText(pct) {
+  if (S.progress !== 'page' || !W || !loc) return (pct * 100).toFixed(1) + '%';
+  const bpp = updateBpp(); if (!bpp) return (pct * 100).toFixed(1) + '%';
+  const sp = sectionPages(); const idx = Math.min(loc.start.index, W.sizes.length - 1);
   const total = Math.max(1, Math.round(W.total / bpp));
   const page = Math.min(total, Math.max(1, Math.round(W.cum[idx] / bpp + (sp ? sp.page : 1))));
   return page + '/' + total;
@@ -740,6 +759,7 @@ function onRelocated(l) {
     if (!(pos && fx.pos && pos.index === fx.pos.index && Math.abs(pos.frac - fx.pos.frac) < 0.002)) { jumpToPos(fx.pos).catch(() => {}); return; }
   }
   cur.state.cfi = cfi; cur.state.percentage = pct; cur.state.pos = pos; cur.state.posUpdated = Date.now(); writeLocalPos(cur); saveState();
+  trackMove(pct);
   refreshProgress();
   updateBookmarkButton();
   highlightToc();
@@ -753,6 +773,7 @@ function refreshProgress() {
   $('#progressLabel').textContent = pt;
   $('#slider').value = Math.round(pct * 1000);
   $('#miniProgress').textContent = pt;
+  paintTimer();
 }
 $('#slider').addEventListener('change', e => {
   if (!W) return;
@@ -935,6 +956,7 @@ async function rebuildRendition() {
 /* 책 닫기 */
 function closeBook() {
   saveState.flush();
+  endSession().finally(() => renderShelf());
   closeOverlays();
   try { rendition && rendition.destroy(); } catch (e) {}
   try { book && book.destroy(); } catch (e) {}
@@ -946,6 +968,98 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && cur
 addEventListener('pagehide', () => { if (cur) { writeLocalPos(cur); saveState.flush(); } });
 document.addEventListener('freeze', () => { if (cur) { writeLocalPos(cur); saveState.flush(); } });
 addEventListener('beforeunload', () => { if (cur) saveState.flush(); });
+
+
+/* =====================================================
+   독서 시간 기록
+   - 책이 열려 있고 화면이 켜져 있으며 최근 3분 안에 손길(터치/쪽 넘김)이 있을 때만 시간이 올라가요
+   - 기록은 'state' 저장소의 'readlog' 항목 하나에 모아 저장 (백업 파일에도 함께 들어가요)
+   ===================================================== */
+const IDLE_MS = 3 * 60 * 1000, AWAY_MS = 10 * 60 * 1000;
+let sess = null, lastTick = 0, lastTouch = 0, lastPersist = 0, hiddenAt = 0, logQ = Promise.resolve();
+const sid = () => Math.random().toString(36).slice(2, 10);
+function pageNow(pct, tp) { return tp ? Math.min(tp, Math.max(1, Math.round(pct * tp) + 1)) : null; }
+function sessRecord() {
+  const tp = (W && updateBpp() ? Math.max(1, Math.round(W.total / lastBpp)) : 0) || sess.tp || 0;
+  return {
+    sid: sess.sid, bid: sess.bid, title: sess.title, st: sess.st, en: Date.now(), sec: Math.floor(sess.ms / 1000),
+    tp: tp || null, pf: pageNow(sess.c0, tp), pt: pageNow(sess.c1, tp), rp: Math.round(sess.rp), c0: sess.c0, c1: sess.c1,
+  };
+}
+function commitRec(rec) {
+  logQ = logQ.then(async () => {
+    const o = (await DB.get('state', 'readlog')) || { id: 'readlog', sessions: [] };
+    const i = o.sessions.findIndex(x => x.sid === rec.sid);
+    if (i >= 0) o.sessions[i] = rec; else o.sessions.push(rec);
+    await DB.put('state', o);
+  }).catch(() => {});
+  return logQ;
+}
+function persistSess(commit) {
+  if (!sess || sess.ms < 5000) return Promise.resolve();
+  const rec = sessRecord();
+  try { localStorage.setItem('rl.active', JSON.stringify(rec)); } catch (e) {}
+  return commit ? commitRec(rec) : Promise.resolve();
+}
+function startSession() {
+  if (!cur || sess) return;
+  const p = cur.state.percentage || 0;
+  sess = { sid: sid(), bid: cur.id, title: cur.meta.title, st: Date.now(), ms: 0, c0: p, c1: p, prev: null, rp: 0, tp: 0 };
+  lastTick = lastTouch = Date.now(); lastPersist = 0; paintTimer();
+}
+async function endSession() {
+  if (!sess) return;
+  const s = sess;
+  if (s.ms >= 5000) { await persistSess(true); try { localStorage.removeItem('rl.active'); } catch (e) {} }
+  else { try { localStorage.removeItem('rl.active'); } catch (e) {} }
+  if (sess === s) sess = null;
+}
+function trackMove(pct) {
+  lastTouch = Date.now();
+  if (!sess) return;
+  sess.c1 = pct;
+  const bpp = updateBpp(); const tp = bpp && W ? W.total / bpp : 0;
+  if (tp) sess.tp = Math.round(tp);
+  if (sess.prev != null && tp) { const d = (pct - sess.prev) * tp; if (d > 0 && d <= 6) sess.rp += d; }
+  sess.prev = pct;
+}
+function fmtClock(ms) {
+  const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+}
+function paintTimer() {
+  if (!sess) return;
+  const active = Date.now() - lastTouch < IDLE_MS && !document.hidden;
+  const t = (active ? '⏱ ' : '⏸ ') + fmtClock(sess.ms);
+  const a = $('#readTimer'); if (a) a.textContent = t;
+  const mp = $('#miniProgress'); if (mp) { const base = mp.textContent.split(' · ')[0]; mp.textContent = base + ' · ' + t; }
+}
+setInterval(() => {
+  const now = Date.now(); const dt = Math.min(now - lastTick, 3000); lastTick = now;
+  if (!sess) return;
+  if (!document.hidden && !$('#reader').hidden && now - lastTouch < IDLE_MS) sess.ms += dt;
+  paintTimer();
+  if (now - lastPersist > 15000 && sess.ms >= 5000) { lastPersist = now; persistSess(true); }
+}, 1000);
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { lastTouch = Date.now(); }, true));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); persistSess(true); return; }
+  lastTick = Date.now();
+  if (sess && hiddenAt && Date.now() - hiddenAt > AWAY_MS) { endSession().then(() => { if (cur) startSession(); }); }
+});
+addEventListener('pagehide', () => persistSess(false));
+async function recoverActive() {
+  try {
+    const raw = localStorage.getItem('rl.active'); if (!raw) return;
+    localStorage.removeItem('rl.active');
+    const rec = JSON.parse(raw); if (rec && rec.sid && rec.sec >= 5) await commitRec(rec);
+  } catch (e) {}
+}
+Stats.init({
+  load: async () => ((await DB.get('state', 'readlog')) || { sessions: [] }).sessions,
+  show: () => setView('stats'),
+  hide: () => setView('library'),
+});
 
 /* 시작 */
 async function startApp() {
@@ -964,6 +1078,7 @@ async function startApp() {
   }
   $('#empty').innerHTML = '<div class="empty-icon">📖</div><p>아직 책이 없어요.<br>epub 파일을 끌어다 놓거나 <b>+ 책 추가</b>를 눌러주세요.</p><p class="muted small">책 파일은 이 기기의 브라우저에만 저장되고, 어디에도 업로드되지 않아요.</p>';
   await renderShelf();
+  if (localStorage.getItem('rl.active')) { await recoverActive(); await renderShelf(); }
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
