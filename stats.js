@@ -168,7 +168,9 @@ function editRec(sid) {
   document.getElementById('stEdit')?.remove();
   const mins = Math.max(0, Math.round((s.sec || 0) / 60));
   const box = document.createElement('div'); box.id = 'stEdit'; box.className = 'dialog';
-  box.innerHTML = '<div class="dialog-box st-editbox"><b>' + esc(s.title) + '</b><div class="muted small">' + hm(s.st) + ' 시작</div>' +
+  box.innerHTML = '<div class="dialog-box st-editbox"><b>' + esc(s.title) + '</b>' +
+    '<div class="erow"><label>날짜<input id="eDate" type="date" value="' + dkey(s.st) + '"></label>' +
+    '<label>시작 시각<input id="eTime" type="time" value="' + hm(s.st) + '"></label></div>' +
     '<label>읽은 시간 (분)<input id="eMin" type="number" inputmode="numeric" min="0" value="' + mins + '"></label>' +
     '<div class="erow"><label>시작 쪽<input id="ePf" type="number" inputmode="numeric" min="0" value="' + (s.pf ?? '') + '"></label>' +
     '<label>끝 쪽<input id="ePt" type="number" inputmode="numeric" min="0" value="' + (s.pt ?? '') + '"></label></div>' +
@@ -185,8 +187,10 @@ function editRec(sid) {
     if (b.dataset.e === 'cancel') { box.remove(); return; }
     const m = num(g('eMin').value), pf = num(g('ePf').value), pt = num(g('ePt').value), rp = num(g('eRp').value);
     if (m == null) { g('eMin').focus(); return; }
-    const patch = { sec: m * 60, pf, pt, rp: rp == null ? 0 : rp, edited: true };
-    if (s.st + patch.sec * 1000 > s.en) patch.en = s.st + patch.sec * 1000;
+    const dv = g('eDate').value, tv = g('eTime').value;
+    let st2 = s.st;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dv) && /^\d{2}:\d{2}$/.test(tv)) { const [y, mo, d] = dv.split('-').map(Number), [h, mi] = tv.split(':').map(Number); st2 = new Date(y, mo - 1, d, h, mi).getTime(); }
+    const patch = { sec: m * 60, pf, pt, rp: rp == null ? 0 : rp, edited: true, st: st2, en: st2 + Math.max(1, m * 60) * 1000 };
     box.remove(); await host.edit(sid, patch); await refresh(); const y = $('#stats').scrollTop; render(); $('#stats').scrollTop = y;
   });
 }
