@@ -231,3 +231,8 @@ body.selmode .tapzone.mid{display:none}
 .st-editbox label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);flex:1}
 .st-editbox input{font:inherit;font-size:18px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%}
 .st-editbox .erow{display:flex;gap:10px}
+.st-editbox .erow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.st-editbox label{min-width:0}
+.st-editbox input{min-width:0;max-width:100%;height:48px;display:block;-webkit-appearance:none;appearance:none;text-align:left;margin:0}
+.st-editbox input::-webkit-date-and-time-value{text-align:left;min-height:1.2em}
+.st-editbox input[type=date],.st-editbox input[type=time]{padding:0 12px}
