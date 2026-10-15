@@ -169,8 +169,8 @@ function editRec(sid) {
   const mins = Math.max(0, Math.round((s.sec || 0) / 60));
   const box = document.createElement('div'); box.id = 'stEdit'; box.className = 'dialog';
   box.innerHTML = '<div class="dialog-box st-editbox"><b>' + esc(s.title) + '</b>' +
-    '<div class="erow"><label>날짜<input id="eDate" type="date" value="' + dkey(s.st) + '"></label>' +
-    '<label>시작 시각<input id="eTime" type="time" value="' + hm(s.st) + '"></label></div>' +
+    '<div class="erow"><label class="pickf">날짜<span class="pick" id="eDateT"></span><input id="eDate" type="date" value="' + dkey(s.st) + '"></label>' +
+    '<label class="pickf">시작 시각<span class="pick" id="eTimeT"></span><input id="eTime" type="time" value="' + hm(s.st) + '"></label></div>' +
     '<label>읽은 시간 (분)<input id="eMin" type="number" inputmode="numeric" min="0" value="' + mins + '"></label>' +
     '<div class="erow"><label>시작 쪽<input id="ePf" type="number" inputmode="numeric" min="0" value="' + (s.pf ?? '') + '"></label>' +
     '<label>끝 쪽<input id="ePt" type="number" inputmode="numeric" min="0" value="' + (s.pt ?? '') + '"></label></div>' +
@@ -181,6 +181,12 @@ function editRec(sid) {
   const g = id => box.querySelector('#' + id);
   const num = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : null; };
   const auto = () => { const a = num(g('ePf').value), b = num(g('ePt').value); if (a != null && b != null) g('eRp').value = Math.max(0, b - a); };
+  const paint = () => {
+    const dv = g('eDate').value, tv = g('eTime').value;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dv)) { const d = parseKey(dv); g('eDateT').textContent = (d.getFullYear() !== new Date().getFullYear() ? d.getFullYear() + '년 ' : '') + (d.getMonth() + 1) + '월 ' + d.getDate() + '일 (' + WDK[d.getDay()] + ')'; } else g('eDateT').textContent = '날짜 선택';
+    g('eTimeT').textContent = tv || '시각 선택';
+  };
+  ['input', 'change'].forEach(ev => { g('eDate').addEventListener(ev, paint); g('eTime').addEventListener(ev, paint); }); paint();
   g('ePf').addEventListener('input', auto); g('ePt').addEventListener('input', auto);
   box.addEventListener('click', async e => {
     const b = e.target.closest('[data-e]'); if (!b) return;
