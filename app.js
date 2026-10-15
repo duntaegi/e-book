@@ -127,7 +127,7 @@ async function renderShelf() {
   for (const m of metas.filter(m => m.order == null).sort((a, b) => a.added - b.added)) { m.order = ++maxOrder; await DB.put('meta', m); }
   metas.sort((a, b) => a.order - b.order);
   shelf0.classList.toggle('edit', editMode);
-  const shelf = shelf0; shelf.innerHTML = '';
+  const shelf = document.createDocumentFragment(); // 다 만든 뒤 한 번에 교체 (동시에 두 번 그려져도 겹치지 않게)
   $('#empty').hidden = metas.length > 0;
   if (!editMode) {
     let sm = null; try { await Stats.update(); sm = Stats.summary(); } catch (e) {}
@@ -165,6 +165,7 @@ async function renderShelf() {
     if (editMode) attachDrag(card, m);
     shelf.appendChild(card);
   }
+  shelf0.replaceChildren(shelf);
   $('#library').scrollTop = keep;
 }
 
