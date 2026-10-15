@@ -921,7 +921,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 19';
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 20';
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
@@ -1073,6 +1073,10 @@ Stats.init({
   show: () => setView('stats'),
   hide: () => { setView('library'); renderShelf(); },
   ask,
+  edit: (sid, patch) => { logQ = logQ.then(async () => {
+    const o = (await DB.get('state', 'readlog')) || { id: 'readlog', sessions: [] };
+    const r = o.sessions.find(x => x.sid === sid); if (r) Object.assign(r, patch); await DB.put('state', o);
+  }).catch(() => {}); return logQ; },
   remove: ids => { logQ = logQ.then(async () => {
     const o = (await DB.get('state', 'readlog')) || { id: 'readlog', sessions: [] };
     const gone = new Set(ids); o.sessions = o.sessions.filter(x => !gone.has(x.sid)); await DB.put('state', o);

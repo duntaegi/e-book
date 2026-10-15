@@ -225,3 +225,9 @@ body.selmode .tapzone.mid{display:none}
 .sdel{border:0;background:transparent;color:var(--muted);font-size:22px;width:36px;height:36px;border-radius:50%;flex:none;line-height:1}
 .sdel:active{background:var(--line)}
 .st-clean{margin-top:18px;text-align:center}
+.sedit{border:0;background:transparent;color:var(--muted);font-size:18px;width:36px;height:36px;border-radius:50%;flex:none;line-height:1}
+.sedit:active{background:var(--line)}
+.st-editbox{display:flex;flex-direction:column;gap:12px;width:min(92vw,380px)}
+.st-editbox label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);flex:1}
+.st-editbox input{font:inherit;font-size:18px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%}
+.st-editbox .erow{display:flex;gap:10px}

@@ -20,7 +20,7 @@ const fmtS = sec => { const m = Math.round(sec / 60); return m < 60 ? m + '분' 
 const hm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
 
 const SHORT = 60;
-let host = { load: async () => [], show() {}, hide() {}, remove: async () => {}, ask: async () => true };
+let host = { load: async () => [], show() {}, hide() {}, remove: async () => {}, edit: async () => {}, ask: async () => true };
 let LOG = [];
 let byDay = new Map();
 let st = { mode: 'day', date: new Date() };
@@ -93,7 +93,7 @@ function sessionList(ss) {
     let pg;
     if (s.pf != null && s.pt != null) pg = s.pf + ' → ' + s.pt + '쪽 <span class="muted">(' + (s.rp || 0) + '쪽 읽음)</span>';
     else pg = Math.round((s.c0 || 0) * 1000) / 10 + '% → ' + Math.round((s.c1 || 0) * 1000) / 10 + '%';
-    return '<div class="srow"><div class="stime">' + hm(s.st) + ' – ' + hm(s.en) + '</div><div class="sbody"><div class="bt">' + esc(s.title) + '</div><div class="bm">' + pg + '</div></div><div class="sdur">' + fmt(s.sec) + '</div><button class="sdel" data-del="' + esc(s.sid) + '" aria-label="이 기록 지우기">×</button></div>';
+    return '<div class="srow"><div class="stime">' + hm(s.st) + ' – ' + hm(s.en) + '</div><div class="sbody"><div class="bt">' + esc(s.title) + '</div><div class="bm">' + pg + '</div></div><div class="sdur">' + fmt(s.sec) + '</div><button class="sedit" data-edit="' + esc(s.sid) + '" aria-label="이 기록 고치기">✎</button><button class="sdel" data-del="' + esc(s.sid) + '" aria-label="이 기록 지우기">×</button></div>';
   }).join('');
 }
 function cleanBtn() {
@@ -146,6 +146,7 @@ function bindStats() {
   const el = $('#stats'); if (!el) return;
   el.addEventListener('click', e => {
     const t = e.target.closest('button, [data-go]'); if (!t || t.disabled) return;
+    if (t.dataset.edit) { editRec(t.dataset.edit); return; }
     if (t.dataset.del) { removeRecs([t.dataset.del], '이 읽은 기록을 지울까요?'); return; }
     if (t.dataset.clean) { const ids = LOG.filter(s => (s.sec || 0) < SHORT).map(s => s.sid); removeRecs(ids, '1분 미만의 짧은 기록 ' + ids.length + '개를 모두 지울까요?'); return; }
     if (t.dataset.act === 'back') { host.hide(); return; }
@@ -162,6 +163,33 @@ function bindStats() {
   });
 }
 
+function editRec(sid) {
+  const s = LOG.find(x => x.sid === sid); if (!s) return;
+  document.getElementById('stEdit')?.remove();
+  const mins = Math.max(0, Math.round((s.sec || 0) / 60));
+  const box = document.createElement('div'); box.id = 'stEdit'; box.className = 'dialog';
+  box.innerHTML = '<div class="dialog-box st-editbox"><b>' + esc(s.title) + '</b><div class="muted small">' + hm(s.st) + ' 시작</div>' +
+    '<label>읽은 시간 (분)<input id="eMin" type="number" inputmode="numeric" min="0" value="' + mins + '"></label>' +
+    '<div class="erow"><label>시작 쪽<input id="ePf" type="number" inputmode="numeric" min="0" value="' + (s.pf ?? '') + '"></label>' +
+    '<label>끝 쪽<input id="ePt" type="number" inputmode="numeric" min="0" value="' + (s.pt ?? '') + '"></label></div>' +
+    '<label>읽은 쪽수<input id="eRp" type="number" inputmode="numeric" min="0" value="' + (s.rp ?? 0) + '"></label>' +
+    '<div class="muted small">시작·끝 쪽을 고치면 읽은 쪽수가 자동으로 계산돼요.</div>' +
+    '<div class="dialog-actions"><button class="btn ghost" data-e="cancel">취소</button><button class="btn primary" data-e="save">저장</button></div></div>';
+  document.body.appendChild(box);
+  const g = id => box.querySelector('#' + id);
+  const num = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : null; };
+  const auto = () => { const a = num(g('ePf').value), b = num(g('ePt').value); if (a != null && b != null) g('eRp').value = Math.max(0, b - a); };
+  g('ePf').addEventListener('input', auto); g('ePt').addEventListener('input', auto);
+  box.addEventListener('click', async e => {
+    const b = e.target.closest('[data-e]'); if (!b) return;
+    if (b.dataset.e === 'cancel') { box.remove(); return; }
+    const m = num(g('eMin').value), pf = num(g('ePf').value), pt = num(g('ePt').value), rp = num(g('eRp').value);
+    if (m == null) { g('eMin').focus(); return; }
+    const patch = { sec: m * 60, pf, pt, rp: rp == null ? 0 : rp, edited: true };
+    if (s.st + patch.sec * 1000 > s.en) patch.en = s.st + patch.sec * 1000;
+    box.remove(); await host.edit(sid, patch); await refresh(); const y = $('#stats').scrollTop; render(); $('#stats').scrollTop = y;
+  });
+}
 async function removeRecs(ids, msg) {
   if (!ids.length || !(await host.ask(msg + '\n(지운 기록은 되돌릴 수 없어요)', '지우기'))) return;
   await host.remove(ids); await refresh(); const y = $('#stats').scrollTop; render(); $('#stats').scrollTop = y;
