@@ -38,7 +38,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .cover{aspect-ratio:2/3;border-radius:8px;background:var(--panel);overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.2);display:grid;place-items:center;position:relative}
 .cover img{width:100%;height:100%;object-fit:cover;display:block}
 .cover .ph{padding:12px;text-align:center;font-weight:600;font-size:15px;line-height:1.35;color:var(--muted);word-break:keep-all}
-.cover .bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(0,0,0,.25)}
+.cover .bar{position:absolute;left:0;right:0;bottom:0;width:100%;justify-self:stretch;align-self:end;display:block;min-width:0;height:5px;background:rgba(0,0,0,.25)}
 .cover .bar i{display:block;height:100%;background:var(--accent)}
 .card .t{font-size:14px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:keep-all}
 .card .a{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -239,3 +239,5 @@ body.selmode .tapzone.mid{display:none}
 .st-editbox .pickf input{position:absolute;left:0;right:0;bottom:0;opacity:0}
 .st-editbox .dialog-actions{margin-top:4px}
 .st-editbox .dialog-actions .btn{flex:1}
+.calcover .cc-g i.em{background:transparent}
+.calcover .cc-g i.fu{background:rgba(255,255,255,.1)}

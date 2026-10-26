@@ -134,7 +134,9 @@ async function renderShelf() {
   if (!editMode) {
     let sm = null; try { await Stats.update(); sm = Stats.summary(); } catch (e) {}
     const now = new Date(); let dots = '';
-    for (let n = 27; n >= 0; n--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - n); const k = sm ? sm.dkey(d.getTime()) : ''; dots += '<i class="' + (sm && sm.has(k) ? 'on ' : '') + (n === 0 ? 'td' : '') + '"></i>'; }
+    const y = now.getFullYear(), mo = now.getMonth(), lead = (new Date(y, mo, 1).getDay() + 6) % 7, nd = new Date(y, mo + 1, 0).getDate();
+    for (let n = 0; n < lead; n++) dots += '<i class="em"></i>';
+    for (let d = 1; d <= nd; d++) { const k = sm ? sm.dkey(new Date(y, mo, d).getTime()) : ''; dots += '<i class="' + (sm && sm.has(k) ? 'on ' : '') + (d === now.getDate() ? 'td ' : '') + (d > now.getDate() ? 'fu' : '') + '"></i>'; }
     const today = sm ? sm.today : 0;
     const cc = document.createElement('div'); cc.className = 'card calcard';
     cc.innerHTML = '<div class="cover calcover"><div><div class="cc-k">독서 기록</div><div class="cc-m">' + (now.getMonth() + 1) + '월</div><div class="cc-t">오늘 ' + (sm ? sm.fmt(today) : '0분') + '</div></div><div class="cc-g">' + dots + '</div></div>' +
@@ -921,7 +923,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 23';
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 24';
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }
