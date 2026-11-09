@@ -118,6 +118,41 @@ function applyChromeTheme() {
 const coverURLs = [];
 let editMode = false;
 const shelf0 = $('#shelf');
+let curFolder = null;
+async function getFolders() { try { const o = await DB.get('state', 'folders'); return (o && o.list) || []; } catch (e) { return []; } }
+const putFolders = list => DB.put('state', { id: 'folders', list });
+function askName(title, init, okLabel) {
+  return new Promise(res => {
+    const box = document.createElement('div'); box.className = 'dialog';
+    box.innerHTML = '<div class="dialog-box nm-box"><b>' + esc(title) + '</b><input type="text" maxlength="40" placeholder="폴더 이름" value="' + esc(init || '') + '"><div class="dialog-actions"><button class="btn ghost" data-k="0">취소</button><button class="btn primary" data-k="1">' + (okLabel || '확인') + '</button></div></div>';
+    document.body.appendChild(box);
+    const inp = box.querySelector('input'); setTimeout(() => { inp.focus(); inp.select(); }, 60);
+    const done = v => { box.remove(); res(v); };
+    box.addEventListener('click', e => { const k = e.target.closest('[data-k]'); if (k) done(k.dataset.k === '1' ? inp.value.trim() : null); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(inp.value.trim()); });
+  });
+}
+async function newFolder(name) {
+  const list = await getFolders(); const f = { id: uid(), name }; list.push(f); await putFolders(list); return f;
+}
+async function moveBook(m) {
+  const folders = await getFolders();
+  const pick = await new Promise(res => {
+    const box = document.createElement('div'); box.className = 'dialog';
+    box.innerHTML = '<div class="dialog-box mv-box"><b>“' + esc(m.title) + '” 옮기기</b><div class="mv-list">' +
+      '<button data-f="" class="' + (!m.folder ? 'cur' : '') + '">서재 (폴더 밖)</button>' +
+      folders.map(f => '<button data-f="' + esc(f.id) + '" class="' + (m.folder === f.id ? 'cur' : '') + '">' + esc(f.name) + '</button>').join('') +
+      '<button data-f="__new" class="new">+ 새 폴더 만들어 넣기</button></div><div class="dialog-actions"><button class="btn ghost" data-f="__x">취소</button></div></div>';
+    document.body.appendChild(box);
+    box.addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (b) { box.remove(); res(b.dataset.f); } });
+  });
+  if (pick === '__x') return;
+  let target = pick;
+  if (pick === '__new') { const name = await askName('새 폴더 이름', ''); if (!name) return; target = (await newFolder(name)).id; }
+  const fresh = await DB.get('meta', m.id); if (!fresh) return;
+  if (target) fresh.folder = target; else delete fresh.folder;
+  await DB.put('meta', fresh); await renderShelf();
+}
 let shelfGen = 0;
 async function renderShelf() {
   const gen = ++shelfGen;
@@ -128,10 +163,18 @@ async function renderShelf() {
   let maxOrder = Math.max(0, ...metas.filter(m => m.order != null).map(m => m.order));
   for (const m of metas.filter(m => m.order == null).sort((a, b) => a.added - b.added)) { m.order = ++maxOrder; await DB.put('meta', m); }
   metas.sort((a, b) => a.order - b.order);
+  const folders = await getFolders();
+  const fids = new Set(folders.map(f => f.id));
+  if (curFolder && !fids.has(curFolder)) curFolder = null;
+  const visible = curFolder ? metas.filter(m => m.folder === curFolder) : metas.filter(m => !m.folder || !fids.has(m.folder));
+  const curF = folders.find(f => f.id === curFolder);
+  $('#libTitle').textContent = curF ? curF.name : '내 서재';
+  $('#btnFolderBack').hidden = !curF; $('#btnRename').hidden = !curF; $('#btnNewFolder').hidden = !!curF; $('#btnBackup').hidden = !!curF;
   shelf0.classList.toggle('edit', editMode);
   const shelf = document.createDocumentFragment(); // 다 만든 뒤 한 번에 교체 (동시에 두 번 그려져도 겹치지 않게)
-  $('#empty').hidden = metas.length > 0;
-  if (!editMode) {
+  $('#empty').hidden = curFolder ? true : (metas.length > 0 || folders.length > 0);
+  const coverURL = m => { const u = URL.createObjectURL(new Blob([m.cover.buf], { type: m.cover.type || 'image/jpeg' })); coverURLs.push(u); return u; };
+  if (!editMode && !curFolder) {
     let sm = null; try { await Stats.update(); sm = Stats.summary(); } catch (e) {}
     const now = new Date(); let dots = '';
     const y = now.getFullYear(), mo = now.getMonth(), lead = (new Date(y, mo, 1).getDay() + 6) % 7, nd = new Date(y, mo + 1, 0).getDate();
@@ -144,22 +187,39 @@ async function renderShelf() {
     cc.addEventListener('click', () => Stats.open(new Date(), 'month'));
     shelf.appendChild(cc);
   }
-  for (const [i, m] of metas.entries()) {
+  if (!curFolder) {
+    for (const f of folders) {
+      const kids = metas.filter(m => m.folder === f.id);
+      const cells = [0, 1, 2, 3].map(i => { const k = kids[i]; return k ? (k.cover ? '<div class="fc"><img alt="" src="' + coverURL(k) + '"></div>' : '<div class="fc"><div class="ph">' + esc(k.title) + '</div></div>') : '<div class="fc e"></div>'; }).join('');
+      const card = document.createElement('div'); card.className = 'card foldercard';
+      card.innerHTML = '<div class="cover foldercover"><div class="fg">' + cells + '</div></div><div class="t">' + esc(f.name) + '</div><div class="a">' + kids.length + '권</div><button class="del" aria-label="폴더 삭제">×</button>';
+      card.addEventListener('click', e => { if (e.target.closest('.del')) return; curFolder = f.id; renderShelf(); $('#library').scrollTop = 0; });
+      $('.del', card).addEventListener('click', async e => {
+        e.stopPropagation();
+        if (await ask('“' + f.name + '” 폴더를 삭제할까요?\n안에 있는 책은 지워지지 않고 서재로 돌아와요.', '삭제')) {
+          for (const k of kids) { delete k.folder; await DB.put('meta', k); }
+          await putFolders((await getFolders()).filter(x => x.id !== f.id)); renderShelf(); toast('폴더를 삭제했어요');
+        }
+      });
+      shelf.appendChild(card);
+    }
+  } else if (!visible.length) {
+    const n = document.createElement('div'); n.className = 'folder-empty muted'; n.textContent = '이 폴더는 비어 있어요. “순서 편집”을 누르고 책의 “이동” 버튼으로 담거나, “+ 책 추가”로 바로 넣을 수 있어요.'; shelf.appendChild(n);
+  }
+  for (const [i, m] of visible.entries()) {
     const card = document.createElement('div'); card.className = 'card';
     let cover = '<div class="ph">' + esc(m.title) + '</div>';
-    if (m.cover) {
-      const u = URL.createObjectURL(new Blob([m.cover.buf], { type: m.cover.type || 'image/jpeg' })); coverURLs.push(u);
-      cover = '<img alt="" src="' + u + '">';
-    }
+    if (m.cover) cover = '<img alt="" src="' + coverURL(m) + '">';
     const pct = Math.round((m.progress || 0) * 100);
     card.innerHTML = '<div class="cover">' + cover + '<div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
       '<div class="t">' + esc(m.title) + '</div><div class="a">' + esc(m.author || '') + (pct ? (m.author ? ' · ' : '') + pct + '%' : '') + '</div>' +
-      '<button class="del" aria-label="삭제">×</button>' +
+      '<button class="del" aria-label="삭제">×</button><button class="mvf" aria-label="폴더로 옮기기">이동</button>' +
       '<span class="pos">' + (i + 1) + '</span>';
     card.addEventListener('click', e => {
-      if (e.target.closest('.del') || editMode) return;
+      if (e.target.closest('.del') || e.target.closest('.mvf') || editMode) return;
       openBook(m.id);
     });
+    $('.mvf', card).addEventListener('click', e => { e.stopPropagation(); moveBook(m); });
     $('.del', card).addEventListener('click', async e => {
       e.stopPropagation();
       if (await ask('“' + m.title + '”을(를) 삭제할까요?\n이 책의 북마크·메모도 함께 지워져요.', '삭제')) {
@@ -233,7 +293,7 @@ function attachDrag(card, meta) {
   };
   card._id = meta.id;
   card.addEventListener('pointerdown', e => {
-    if (e.target.closest('.del') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (e.target.closest('.del') || e.target.closest('.mvf') || (e.pointerType === 'mouse' && e.button !== 0)) return;
     pid = e.pointerId; startX = lastX = e.clientX; startY = lastY = e.clientY;
     cancelTimer(); unlisten(); timer = setTimeout(start, e.pointerType === 'mouse' ? 120 : 280);
     addEventListener('pointermove', onMove); addEventListener('pointerup', onUp); addEventListener('pointercancel', onUp);
@@ -292,7 +352,7 @@ async function importFile(file) {
   try { await DB.put('files', { id, data: buf }); } catch (e) { throw new Error('기기에 저장하지 못했어요. 저장 공간이 부족하거나 브라우저가 막았을 수 있어요 (' + (e && e.name ? e.name : e) + ')'); }
   const all = await DB.all('meta');
   const order = Math.max(0, ...all.map(x => x.order || 0)) + 1;
-  await DB.put('meta', { id, title, author, cover, added: Date.now(), opened: 0, progress: 0, size: buf.byteLength, order });
+  await DB.put('meta', { id, title, author, cover, added: Date.now(), opened: 0, progress: 0, size: buf.byteLength, order, ...(curFolder ? { folder: curFolder } : {}) });
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
   toast('추가했어요: ' + title);
 }
@@ -313,6 +373,16 @@ addEventListener('dragleave', () => { dragN = Math.max(0, dragN - 1); if (!dragN
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('#dropHint').hidden = true; if (e.dataTransfer.files.length) importFiles([...e.dataTransfer.files]); });
 
+$('#btnNewFolder').addEventListener('click', async () => {
+  const name = await askName('새 폴더 이름', ''); if (!name) return;
+  await newFolder(name); await renderShelf(); toast('폴더를 만들었어요');
+});
+$('#btnFolderBack').addEventListener('click', () => { curFolder = null; renderShelf(); $('#library').scrollTop = 0; });
+$('#btnRename').addEventListener('click', async () => {
+  const list = await getFolders(); const f = list.find(x => x.id === curFolder); if (!f) return;
+  const name = await askName('폴더 이름 바꾸기', f.name, '저장'); if (!name) return;
+  f.name = name; await putFolders(list); renderShelf();
+});
 $('#btnReorder').addEventListener('click', () => {
   editMode = !editMode;
   $('#btnReorder').textContent = editMode ? '완료' : '순서 편집';
@@ -923,7 +993,7 @@ function syncSettingsUI() {
   const si = $('#saveInfo');
   if (si) {
     const t = saveInfo.t ? new Date(saveInfo.t).toLocaleTimeString('ko-KR') : '';
-    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 24';
+    si.textContent = '위치 저장: ' + (saveInfo.ok === null ? '대기 중' : saveInfo.ok ? '정상 (' + t + ')' : '오류 (' + saveInfo.err + ')') + (saveInfo.restore ? ' · 마지막 복원: ' + saveInfo.restore : '') + ' · 앱 버전 25';
   }
 }
 function toggleSettings() { closeDrawer(); const s = $('#settings'); s.hidden = !s.hidden; syncSettingsUI(); }

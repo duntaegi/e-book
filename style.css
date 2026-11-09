@@ -241,3 +241,28 @@ body.selmode .tapzone.mid{display:none}
 .st-editbox .dialog-actions .btn{flex:1}
 .calcover .cc-g i.em{background:transparent}
 .calcover .cc-g i.fu{background:rgba(255,255,255,.1)}
+
+/* 폴더 */
+.lib-head{flex-wrap:wrap}
+.lib-title{display:flex;align-items:center;gap:10px;min-width:0}
+.lib-title h1{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.foldercover{background:var(--panel);border:1px solid var(--line)}
+.fg{width:100%;height:100%;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:5px;padding:9px;box-sizing:border-box}
+.fc{border-radius:4px;overflow:hidden;background:var(--line);display:grid;place-items:center;min-width:0;min-height:0}
+.fc img{width:100%;height:100%;object-fit:cover;display:block}
+.fc.e{background:transparent;border:1px dashed var(--line)}
+.fc .ph{padding:4px;font-size:10px;line-height:1.25;text-align:center;color:var(--muted);word-break:keep-all;overflow:hidden}
+.card .mvf{display:none;position:absolute;top:6px;right:6px;height:32px;padding:0 13px;border-radius:16px;border:0;background:var(--accent);color:#fff;font-size:13px;font-weight:700}
+.shelf.edit .card .mvf{display:block}
+.folder-empty{grid-column:1/-1;padding:40px 10px;text-align:center;line-height:1.6;font-size:14px}
+.nm-box{display:flex;flex-direction:column;gap:14px;width:min(92vw,380px)}
+.nm-box>b{text-align:center;font-size:17px}
+.nm-box input{box-sizing:border-box;width:100%;height:48px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);font:inherit;font-size:18px;text-align:center;padding:0 12px;-webkit-appearance:none;appearance:none}
+.nm-box .dialog-actions .btn,.mv-box .dialog-actions .btn{flex:1}
+.mv-box{display:flex;flex-direction:column;gap:14px;width:min(92vw,380px)}
+.mv-box>b{text-align:center;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mv-list{display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto}
+.mv-list button{height:48px;border:1px solid var(--line);border-radius:12px;background:var(--panel);font-size:16px;padding:0 14px;text-align:center;flex:none}
+.mv-list button.cur{border-color:var(--accent);color:var(--accent);font-weight:700}
+.mv-list button.cur::before{content:'✓ '}
+.mv-list button.new{border-style:dashed;color:var(--accent)}

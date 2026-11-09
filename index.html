@@ -21,8 +21,10 @@
 <!-- 서재 -->
 <main id="library" class="view">
   <header class="lib-head">
-    <h1>내 서재</h1>
+    <div class="lib-title"><button id="btnFolderBack" class="btn ghost small" hidden>‹ 서재</button><h1 id="libTitle">내 서재</h1></div>
     <div class="lib-actions">
+      <button id="btnNewFolder" class="btn ghost">+ 폴더</button>
+      <button id="btnRename" class="btn ghost" hidden>이름 변경</button>
       <button id="btnReorder" class="btn ghost">순서 편집</button>
       <button id="btnBackup" class="btn ghost" title="메모·진행도 백업/복원">백업</button>
       <label class="btn primary" for="fileInput">+ 책 추가</label>
