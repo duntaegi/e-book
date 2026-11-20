@@ -3,6 +3,7 @@
    - 책 파일은 올라가지 않아요. 기기마다 같은 epub 파일을 따로 추가해 두세요.
      (책은 파일 내용으로 구분하므로, 같은 파일이면 같은 책으로 알아봐요)
    - 올라가는 것: 책 구분번호, 읽던 위치, 북마크(쪽 이름과 앞 60자 미리보기), 독서 시간 기록
+   - 폴더(이름·어느 책이 들어 있는지)와 서재의 책 순서도 맞춰요.
    - 보기 설정(글자 크기·테마 등)은 기기마다 다르게 쓰려고 맞추지 않아요.
    - 같은 항목을 두 기기에서 바꿨다면 더 나중에 바꾼 쪽을 남겨요. 인터넷이 없으면 모아 뒀다가 연결되면 올려요. */
 (() => {
@@ -27,28 +28,38 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 /* ---------- 항목 ----------
    p:<책>            읽던 위치 (시각은 위치를 저장한 시각)
    b:<책>:<북마크>   북마크 하나
-   s:<연월>:<기록>   독서 기록 하나 */
+   s:<연월>:<기록>   독서 기록 하나
+   f:<폴더>          폴더 하나 (이름)
+   m:<책>            책의 자리 (어느 폴더에 있는지, 서재에서의 순서) */
 const ym = ms => { const d = new Date(ms || 0); return String(d.getUTCFullYear() * 100 + d.getUTCMonth() + 1); };
 function parseKey(k) {
   const a = k.split(':');
   if (a[0] === 'p') return { kind: 'p', bid: a[1] };
   if (a[0] === 'b') return { kind: 'b', bid: a[1], id: a.slice(2).join(':') };
+  if (a[0] === 'f') return { kind: 'f', fid: a.slice(1).join(':') };
+  if (a[0] === 'm') return { kind: 'm', bid: a[1] };
   return { kind: 's', ym: a[1], sid: a.slice(2).join(':') };
 }
 function docOf(k) {
   const p = parseKey(k);
+  if (p.kind === 'f' || p.kind === 'm') return 'klayout';   // 폴더·책 자리는 한 문서에 모음 (책 구분번호는 16진수라 겹치지 않음)
   return p.kind === 's' ? 'l' + p.ym : 'k' + String(p.bid).replace(/[^A-Za-z0-9]/g, '').slice(0, 48);
 }
+let lay = null;      // 책마다 {f: 폴더, o: 순서} — 표지가 든 책 목록을 매번 읽지 않으려고 기억해 둠
+let lastItems = new Map();
 async function collect() {
-  const items = new Map(), books = new Set(); let haveLog = false;
+  const items = new Map(), books = new Set(); let haveLog = false, haveFolders = false;
+  if (!lay) { lay = {}; for (const m of await R.DB.all('meta')) lay[m.id] = { f: m.folder || null, o: m.order == null ? null : m.order }; }
   for (const s of await R.DB.all('state')) {
-    if (!s || s.id === 'folders') continue;
+    if (!s || s.id === 'booklayout') continue;
+    if (s.id === 'folders') { haveFolders = true; for (const f of s.list || []) if (f && f.id) items.set('f:' + f.id, { id: f.id, name: f.name }); continue; }
     if (s.id === 'readlog') { haveLog = true; for (const r of s.sessions || []) if (r && r.sid) items.set('s:' + ym(r.st) + ':' + r.sid, r); continue; }
     books.add(s.id);
     if (s.cfi) items.set('p:' + s.id, { cfi: s.cfi, percentage: s.percentage || 0, pos: s.pos || null, t: s.posUpdated || 0 });
     for (const b of s.bookmarks || []) if (b && b.id) items.set('b:' + s.id + ':' + b.id, b);
   }
-  return { items, books, haveLog };
+  for (const bid in lay) items.set('m:' + bid, lay[bid]);
+  return { items, books, haveLog, haveFolders };
 }
 // 바뀌었는지만 보면 되므로 짧은 해시로 비교 (cyrb53)
 function hash(s) {
@@ -84,13 +95,17 @@ const pending = () => Object.keys(Y.dirty).length;
 /* 이 기기에서 달라진 것을 찾아 '보낼 목록'에 넣음 */
 async function scan() {
   if (!Y.on) return 0;
-  const { items, books, haveLog } = await collect();
+  const { items, books, haveLog, haveFolders } = await collect();
+  lastItems = items;
   const now = Date.now(); let n = 0;
   for (const [k, v] of items) {
     const h = hash(norm(v));
     if (Y.base[k] === h) continue;
+    const first = Y.base[k] === undefined;
     Y.base[k] = h; Y.dirty[k] = 1; n++;
     if (k[0] === 'p') Y.stamp[k] = v.t || 1;
+    // 폴더·책 자리는 처음 보는 항목이면 가장 낮은 시각(0)으로 올림: 이미 서버에 있는 배치(예: 아이패드)가 새로 연결한 기기의 기본 배치에 지지 않게
+    else if (k[0] === 'f' || k[0] === 'm') Y.stamp[k] = first ? 0 : Math.max(now, (Y.stamp[k] || 0) + 1);
     else if (Y.fresh) Y.stamp[k] = (k[0] === 'b' ? v.created : (v.en || v.st)) || 1;   // 처음 켤 때는 원래 만든 시각으로
     else Y.stamp[k] = Math.max(now, (Y.stamp[k] || 0) + 1);
   }
@@ -100,6 +115,8 @@ async function scan() {
     if (p.kind === 'p') { if (!books.has(p.bid)) forget(k); continue; }   // 위치는 지우지 않음. 책을 지운 경우는 기억을 비워 두면 다음에 다시 받아와요
     if (p.kind === 'b' && !books.has(p.bid)) { forget(k); continue; }       // 책 자체를 지운 것이지 북마크를 지운 게 아님
     if (p.kind === 's' && !haveLog) { forget(k); continue; }
+    if (p.kind === 'm') { forget(k); continue; }                              // 책을 이 기기에서 지운 것: 자리 기록은 서버에 그대로 둠
+    if (p.kind === 'f' && !haveFolders) { forget(k); continue; }
     delete Y.base[k]; Y.dirty[k] = 1; Y.stamp[k] = Math.max(now, (Y.stamp[k] || 0) + 1); n++;   // 지운 것도 알려야 다른 기기에서 지워짐
   }
   Y.fresh = false;
@@ -116,8 +133,9 @@ async function merge(docs) {
     let v = null, rh = null;
     if (typeof e.v === 'string') { try { v = JSON.parse(e.v); rh = hash(norm(v)); } catch (err) { continue; } }
     const lh = Y.base[k] === undefined ? null : Y.base[k], lt = Y.stamp[k] || 0;
+    const have = Y.base[k] !== undefined || Y.stamp[k] !== undefined;
     if (rh === lh) { if (e.t >= lt) { Y.stamp[k] = e.t; delete Y.dirty[k]; } continue; }
-    if (e.t > lt || (e.t === lt && String(rh) > String(lh))) ops.push({ k, v, t: e.t, h: rh });
+    if (!have || e.t > lt || (e.t === lt && tieRemote(k, v, lastItems.get(k), rh, lh))) ops.push({ k, v, t: e.t, h: rh });
     else Y.dirty[k] = 1;   // 이 기기 쪽이 더 최신이면 다시 올림
   }
   let applied = 0;
@@ -125,18 +143,25 @@ async function merge(docs) {
   save(); pushSoon();
   return applied;
 }
+// 시각이 같을 때 누구를 남길지: 책 자리는 '폴더에 넣어 둔 쪽'이 이김 (정리해 둔 배치가 기본 배치에 밀리지 않게)
+function tieRemote(k, rv, lv, rh, lh) {
+  if (k[0] === 'm') { const r = !!(rv && rv.f), l = !!(lv && lv.f); if (r !== l) return r; }
+  return String(rh) > String(lh);
+}
 const settle = o => { if (o.v === null) delete Y.base[o.k]; else Y.base[o.k] = o.h; Y.stamp[o.k] = o.t; delete Y.dirty[o.k]; };
 const upsert = (arr, key, id, v) => { const i = arr.findIndex(x => x[key] === id); if (v === null) { if (i >= 0) arr.splice(i, 1); } else if (i >= 0) arr[i] = v; else arr.push(v); };
 
 async function applyOps(ops) {
   const cur = R.cur(), curId = cur && cur.id;
-  const byBook = new Map(), logOps = [];
+  const byBook = new Map(), logOps = [], fOps = [], mOps = [];
   for (const o of ops) {
     const p = parseKey(o.k);
     if (p.kind === 's') logOps.push([o, p]);
+    else if (p.kind === 'f') fOps.push([o, p]);
+    else if (p.kind === 'm') mOps.push([o, p]);
     else { if (!byBook.has(p.bid)) byBook.set(p.bid, []); byBook.get(p.bid).push([o, p]); }
   }
-  let applied = 0, shelf = false, askPos = null;
+  let applied = 0, shelf = false, askPos = null, layoutChanged = false;
   for (const [bid, list] of byBook) {
     if (bid === curId) {
       // 지금 읽고 있는 책: 읽는 화면은 건드리지 않고, 북마크만 바꾸고 위치는 물어봄
@@ -175,9 +200,61 @@ async function applyOps(ops) {
       await R.DB.put('state', o);
     });
   }
-  if (shelf && !$('#library').hidden) R.renderShelf();
+  if (fOps.length || mOps.length) layoutChanged = await applyLayout(fOps, mOps);
+  if (layoutChanged) applied += fOps.length + mOps.length;
+  // 순서 편집 중에는 화면을 다시 그리지 않음 (끌던 책이 튀지 않게)
+  if ((shelf || layoutChanged) && !$('#library').hidden && !$('#shelf').classList.contains('edit')) R.renderShelf();
   if (askPos) offerJump(askPos);
   return applied;
+}
+
+/* 폴더와 책 자리 적용 */
+const ctime = id => { const n = parseInt(String(id).slice(8), 36); return isFinite(n) ? n : 0; };   // 폴더 번호 끝부분은 만든 시각이라 그 순서대로 늘어놓음
+async function applyLayout(fOps, mOps) {
+  let changed = false;
+  if (fOps.length) {
+    const st = (await R.DB.get('state', 'folders')) || { id: 'folders', list: [] };
+    st.list = st.list || [];
+    for (const [o, p] of fOps) {
+      const i = st.list.findIndex(x => x.id === p.fid);
+      if (o.v === null) { if (i >= 0) st.list.splice(i, 1); }
+      else if (i >= 0) st.list[i] = { id: o.v.id, name: o.v.name };
+      else st.list.push({ id: o.v.id, name: o.v.name });
+      settle(o);
+    }
+    st.list.sort((a, b) => ctime(a.id) - ctime(b.id));
+    await R.DB.put('state', st); changed = true;
+  }
+  let cache = null, cacheDirty = false;
+  for (const [o, p] of mOps) {
+    if (o.v === null || typeof o.v !== 'object') { settle(o); continue; }
+    const m = await R.DB.get('meta', p.bid);
+    if (m) {
+      if (o.v.f) m.folder = o.v.f; else delete m.folder;
+      if (o.v.o != null) m.order = o.v.o;
+      lay[p.bid] = { f: m.folder || null, o: m.order == null ? null : m.order };   // 먼저 맞춰 둬서 이 저장이 '이 기기에서 바꾼 것'으로 오해되지 않게
+      await R.DB.put('meta', m); changed = true;
+    } else {
+      // 이 기기에 아직 없는 책: 책을 추가하는 순간 적용하려고 적어 둠
+      if (!cache) cache = (await R.DB.get('state', 'booklayout')) || { id: 'booklayout', map: {} };
+      cache.map[p.bid] = { f: o.v.f || null, o: o.v.o == null ? null : o.v.o, t: o.t, h: o.h }; cacheDirty = true;
+    }
+    settle(o);
+  }
+  if (cacheDirty) await R.DB.put('state', cache);
+  return changed;
+}
+// 새로 추가한 책이 다른 기기에서 정해 둔 자리가 있으면 그 자리로
+async function adoptLayout(bid) {
+  const c = await R.DB.get('state', 'booklayout'); const e = c && c.map && c.map[bid]; if (!e) return;
+  const m = await R.DB.get('meta', bid); if (!m) return;
+  if (e.f) m.folder = e.f; else delete m.folder;
+  if (e.o != null) m.order = e.o;
+  lay[bid] = { f: m.folder || null, o: m.order == null ? null : m.order };
+  await R.DB.put('meta', m);
+  Y.base['m:' + bid] = e.h; Y.stamp['m:' + bid] = e.t; delete Y.dirty['m:' + bid]; save();
+  delete c.map[bid]; await R.DB.put('state', c);
+  if (!$('#library').hidden && !$('#shelf').classList.contains('edit')) R.renderShelf();
 }
 
 /* 읽는 중인 책에 다른 기기의 더 최근 위치가 도착하면 이동할지 물어봄 */
@@ -207,7 +284,7 @@ async function push() {
   for (const k of Object.keys(Y.dirty)) {
     const v = items.get(k);
     if (v === undefined && k[0] === 'p') { delete Y.dirty[k]; continue; }
-    const t = k[0] === 'p' ? (v.t || 1) : (Y.stamp[k] || Date.now());
+    const t = k[0] === 'p' ? (v.t || 1) : (Y.stamp[k] ?? Date.now());
     Y.stamp[k] = t;
     const id = docOf(k);
     (docs[id] || (docs[id] = { items: {} })).items[k] = { v: v === undefined ? null : norm(v), t };
@@ -364,7 +441,19 @@ async function openSync() {
 
 /* ---------- 시작 ---------- */
 loadCfg();
-R.DB.onWrite = () => { if (Y.on) { clearTimeout(Y.scanT); Y.scanT = setTimeout(() => run(scan), 1500); } };
+R.DB.onWrite = (store, v, delId) => {
+  if (!Y.on) return;
+  if (store === 'meta') {
+    if (delId) { if (lay) delete lay[delId]; }
+    else if (v && lay) {
+      const n = { f: v.folder || null, o: v.order == null ? null : v.order }, o = lay[v.id];
+      if (!o) { lay[v.id] = n; run(() => adoptLayout(v.id)); }      // 방금 추가한 책
+      else if (o.f !== n.f || o.o !== n.o) lay[v.id] = n;           // 폴더·순서가 바뀜
+      else return;                                                  // 진행도만 바뀐 저장은 무시
+    } else return;
+  }
+  clearTimeout(Y.scanT); Y.scanT = setTimeout(() => run(scan), 1500);
+};
 $('#btnSync').addEventListener('click', openSync);
 $('#syncChip').addEventListener('click', openSync);
 window.addEventListener('online', () => { status(); if (Y.on) { if (!Y.db) start(); else pushSoon(); } });

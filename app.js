@@ -75,8 +75,8 @@ const DB = {
   get: (s, id) => DB.tx(s, 'readonly', st => st.get(id)),
   all: s => DB.tx(s, 'readonly', st => st.getAll()),
   onWrite: null,   // 동기화가 '읽던 위치·북마크·독서 기록이 바뀌었다'는 걸 알아채는 연결 고리
-  put: async (s, v) => { const r = await DB.tx(s, 'readwrite', st => st.put(v)); if (s === 'state' && DB.onWrite) { try { DB.onWrite(); } catch (e) {} } return r; },
-  del: async (s, id) => { const r = await DB.tx(s, 'readwrite', st => st.delete(id)); if (s === 'state' && DB.onWrite) { try { DB.onWrite(); } catch (e) {} } return r; },
+  put: async (s, v) => { const r = await DB.tx(s, 'readwrite', st => st.put(v)); if ((s === 'state' || s === 'meta') && DB.onWrite) { try { DB.onWrite(s, v); } catch (e) {} } return r; },
+  del: async (s, id) => { const r = await DB.tx(s, 'readwrite', st => st.delete(id)); if ((s === 'state' || s === 'meta') && DB.onWrite) { try { DB.onWrite(s, null, id); } catch (e) {} } return r; },
 };
 
 /* ---------- 유틸 ---------- */
