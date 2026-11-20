@@ -266,3 +266,20 @@ body.selmode .tapzone.mid{display:none}
 .mv-list button.cur{border-color:var(--accent);color:var(--accent);font-weight:700}
 .mv-list button.cur::before{content:'✓ '}
 .mv-list button.new{border-style:dashed;color:var(--accent)}
+
+/* 동기화 */
+.sy-box .muted{color:var(--muted,#888)}
+.sy-box p{margin:0 0 14px}
+.sy-code{display:inline-block;margin-top:6px;font-size:19px;font-weight:700;letter-spacing:1px;word-break:break-all;-webkit-user-select:all;user-select:all}
+.sy-in{width:100%;box-sizing:border-box;margin:4px 0 16px;padding:12px;font-size:17px;letter-spacing:1px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:inherit}
+.sy-act{flex-direction:column}
+.sy-act .btn{width:100%}
+
+/* 폰: 서재 위쪽 버튼이 세로로 찌그러지지 않게 줄바꿈 */
+.lib-actions{flex-wrap:wrap}
+.lib-actions .btn{white-space:nowrap}
+@media (max-width:520px){
+  .lib-head{gap:10px}
+  .lib-actions{width:100%;gap:6px}
+  .lib-actions .btn{padding:8px 12px;min-height:40px;font-size:15px;flex:1 1 auto}
+}

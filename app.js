@@ -74,8 +74,9 @@ const DB = {
   },
   get: (s, id) => DB.tx(s, 'readonly', st => st.get(id)),
   all: s => DB.tx(s, 'readonly', st => st.getAll()),
-  put: (s, v) => DB.tx(s, 'readwrite', st => st.put(v)),
-  del: (s, id) => DB.tx(s, 'readwrite', st => st.delete(id)),
+  onWrite: null,   // 동기화가 '읽던 위치·북마크·독서 기록이 바뀌었다'는 걸 알아채는 연결 고리
+  put: async (s, v) => { const r = await DB.tx(s, 'readwrite', st => st.put(v)); if (s === 'state' && DB.onWrite) { try { DB.onWrite(); } catch (e) {} } return r; },
+  del: async (s, id) => { const r = await DB.tx(s, 'readwrite', st => st.delete(id)); if (s === 'state' && DB.onWrite) { try { DB.onWrite(); } catch (e) {} } return r; },
 };
 
 /* ---------- 유틸 ---------- */
@@ -352,7 +353,8 @@ async function importFile(file) {
   try { await DB.put('files', { id, data: buf }); } catch (e) { throw new Error('기기에 저장하지 못했어요. 저장 공간이 부족하거나 브라우저가 막았을 수 있어요 (' + (e && e.name ? e.name : e) + ')'); }
   const all = await DB.all('meta');
   const order = Math.max(0, ...all.map(x => x.order || 0)) + 1;
-  await DB.put('meta', { id, title, author, cover, added: Date.now(), opened: 0, progress: 0, size: buf.byteLength, order, ...(curFolder ? { folder: curFolder } : {}) });
+  const prior = await DB.get('state', id).catch(() => null);   // 다른 기기에서 동기화돼 온 읽던 위치가 있으면 서재에 진행도를 바로 보여 줌
+  await DB.put('meta', { id, title, author, cover, added: Date.now(), opened: 0, progress: (prior && prior.percentage) || 0, size: buf.byteLength, order, ...(curFolder ? { folder: curFolder } : {}) });
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
   toast('추가했어요: ' + title);
 }
@@ -1154,6 +1156,17 @@ Stats.init({
     const gone = new Set(ids); o.sessions = o.sessions.filter(x => !gone.has(x.sid)); await DB.put('state', o);
   }).catch(() => {}); return logQ; },
 });
+
+/* 동기화(sync.js)가 쓰는 연결 고리 */
+window.__reader = {
+  DB, toast, uid,
+  cur: () => cur,
+  logTask: fn => { logQ = logQ.then(fn).catch(() => {}); return logQ; },   // 독서 기록은 한 줄로 세워서 저장 (겹쳐 쓰다 잃어버리지 않게)
+  refreshMarks: () => { try { renderMarks(); updateBookmarkButton(); } catch (e) {} },
+  saveState: () => saveState(),
+  renderShelf: () => renderShelf(),
+  goTo: (pos, cfi) => goToPlace(pos, cfi),
+};
 
 /* 시작 */
 async function startApp() {
