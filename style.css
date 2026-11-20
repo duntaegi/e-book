@@ -283,3 +283,16 @@ body.selmode .tapzone.mid{display:none}
   .lib-actions{width:100%;gap:6px}
   .lib-actions .btn{padding:8px 12px;min-height:40px;font-size:15px;flex:1 1 auto}
 }
+
+/* 서재 위쪽: 총 권수 · 버전 · 동기화 상태 칩 */
+.lib-title .cnt{font-size:15px;font-weight:500;color:var(--muted);white-space:nowrap}
+.lib-title .ver{flex:none;align-self:center;font-size:12px;color:var(--muted)}
+.schip{flex:none;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;background:var(--bg);color:var(--fg);border:1.5px solid var(--line);font-size:12.5px;font-weight:700;white-space:nowrap}
+.schip:active{opacity:.6}
+.schip i{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+.schip.ok{border-color:#2f9e6e} .schip.ok i{background:#2f9e6e}
+.schip.busy i{background:var(--accent);animation:schipPulse 1s ease-in-out infinite}
+.schip.bad{border-color:var(--danger)} .schip.bad i{background:var(--danger)}
+[data-theme=dark] .schip.ok,[data-theme=black] .schip.ok{border-color:#4cc790} [data-theme=dark] .schip.ok i,[data-theme=black] .schip.ok i{background:#4cc790}
+@keyframes schipPulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.schip.busy i{animation:none}}

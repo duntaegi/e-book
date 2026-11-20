@@ -169,7 +169,8 @@ async function renderShelf() {
   if (curFolder && !fids.has(curFolder)) curFolder = null;
   const visible = curFolder ? metas.filter(m => m.folder === curFolder) : metas.filter(m => !m.folder || !fids.has(m.folder));
   const curF = folders.find(f => f.id === curFolder);
-  $('#libTitle').textContent = curF ? curF.name : '내 서재';
+  if (curF) $('#libTitle').textContent = curF.name;
+  else $('#libTitle').innerHTML = '내 서재 <small class="cnt">(총 ' + metas.length + '권)</small>';   // 폴더 안에 든 책까지 전부 센 권수
   $('#btnFolderBack').hidden = !curF; $('#btnRename').hidden = !curF; $('#btnNewFolder').hidden = !!curF; $('#btnBackup').hidden = !!curF;
   shelf0.classList.toggle('edit', editMode);
   const shelf = document.createDocumentFragment(); // 다 만든 뒤 한 번에 교체 (동시에 두 번 그려져도 겹치지 않게)

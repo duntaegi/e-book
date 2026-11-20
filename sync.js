@@ -287,10 +287,25 @@ function statusText() {
   if (Y.last) { const d = new Date(Y.last), p = x => String(x).padStart(2, '0'); return `켜짐 · ${p(d.getHours())}:${p(d.getMinutes())}에 맞춤`; }
   return '켜짐';
 }
+/* 서재 위쪽 칩: 동기화가 됐는지 한눈에 (초록=이 기기 기록이 서버에 다 올라감, 파랑=진행 중, 빨강=안 됨, 회색=꺼짐) */
+function chipState() {
+  if (!Y.on) return ['off', '동기화 꺼짐'];
+  if (!navigator.onLine) return ['bad', '오프라인'];
+  if (Y.err === 'permission-denied') return ['bad', '동기화 거절됨'];
+  if (Y.err) return ['bad', '동기화 안 됨'];
+  if (!Y.ready) return ['busy', '연결 중…'];
+  if (Y.busy || pending()) return ['busy', '동기화 중…'];
+  const d = Y.last ? new Date(Y.last) : null, p = x => String(x).padStart(2, '0');
+  return ['ok', '동기화 완료' + (d ? ` ${p(d.getHours())}:${p(d.getMinutes())}` : '')];
+}
 function status() {
-  const b = $('#btnSync'); if (!b) return;
-  b.textContent = !Y.on ? '동기화' : Y.err && Y.err !== 'load' ? '동기화 !' : '동기화 ✓';
-  b.title = '동기화: ' + statusText();
+  const b = $('#btnSync');
+  if (b) {
+    b.textContent = !Y.on ? '동기화' : Y.err && Y.err !== 'load' ? '동기화 !' : '동기화 ✓';
+    b.title = '동기화: ' + statusText();
+  }
+  const c = $('#syncChip');
+  if (c) { const [cls, txt] = chipState(); c.className = 'schip ' + cls; $('#syncChipTxt').textContent = txt; }
 }
 
 /* ---------- 화면 ---------- */
@@ -351,7 +366,9 @@ async function openSync() {
 loadCfg();
 R.DB.onWrite = () => { if (Y.on) { clearTimeout(Y.scanT); Y.scanT = setTimeout(() => run(scan), 1500); } };
 $('#btnSync').addEventListener('click', openSync);
-window.addEventListener('online', () => { if (Y.on) { if (!Y.db) start(); else pushSoon(); } });
+$('#syncChip').addEventListener('click', openSync);
+window.addEventListener('online', () => { status(); if (Y.on) { if (!Y.db) start(); else pushSoon(); } });
+window.addEventListener('offline', status);
 document.addEventListener('visibilitychange', () => {
   if (!Y.on) return;
   if (document.visibilityState === 'hidden') run(scan).then(() => run(push));
